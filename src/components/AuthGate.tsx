@@ -70,7 +70,7 @@ export function AuthGate({children}:{children:(perfil:PerfilAcesso)=>React.React
       if(getSession()){
         const p=await getMyProfile()
         setPerfil(p)
-        if(p?.status==='ATIVO')fetchRemoteCompanyIdentity().catch(()=>{})
+        if(p?.ativo)fetchRemoteCompanyIdentity().catch(()=>{})
       }
     }catch(e:any){setMsg(e?.message||'Falha ao carregar acesso.')}
     finally{setLoading(false)}
