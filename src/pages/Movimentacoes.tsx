@@ -1,0 +1,9 @@
+import { useMemo, useState } from 'react'
+import type { BancoEmbrioGestor } from '../types/domain'
+import { SearchBar } from '../components/CrudUI'
+function tipoNome(t:string){const m:Record<string,string>={ENTRADA_SEMEN:'Entrada de sêmen',SAIDA_SEMEN:'Saída de sêmen',ENTRADA_EMBRIAO:'Entrada de embriões',SAIDA_EMBRIAO:'Saída de embriões',AJUSTE:'Ajuste'};return m[t]||t}
+export function Movimentacoes({db}:{db:BancoEmbrioGestor}){
+ const[busca,setBusca]=useState('')
+ const lista=useMemo(()=>[...db.movimentacoes].filter(m=>{const c=db.clientes.find(x=>x.id===m.clienteId);const t=db.touros.find(x=>x.id===m.touroId);const d=db.doadoras.find(x=>x.id===m.doadoraId);const q=busca.toLowerCase();return !q||String(c?.nome+' '+t?.nome+' '+d?.nome+' '+m.descricao+' '+tipoNome(m.tipo)).toLowerCase().includes(q)}).sort((a,b)=>b.data.localeCompare(a.data)),[db,busca])
+ return <section className="panel"><div className="panel-head"><div><h2>Movimentações</h2><p>Histórico automático de entradas, saídas e ajustes.</p></div></div><div className="toolbar"><SearchBar value={busca} onChange={setBusca} placeholder="Pesquisar cliente, touro, doadora ou tipo de movimentação"/></div><div className="table-wrap"><table><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Cliente</th><th>Touro</th><th>Doadora</th><th>Quantidade</th><th>Descrição</th></tr></thead><tbody>{lista.map(m=>{const c=db.clientes.find(x=>x.id===m.clienteId);const t=db.touros.find(x=>x.id===m.touroId);const d=db.doadoras.find(x=>x.id===m.doadoraId);const dt=new Date(m.data);return <tr key={m.id}><td>{isNaN(dt.getTime())?m.data:dt.toLocaleString('pt-BR')}</td><td><strong>{tipoNome(m.tipo)}</strong></td><td>{c?.nome||'—'}</td><td>{t?.nome||'—'}</td><td>{d?.nome||'—'}</td><td>{m.quantidade}</td><td>{m.descricao}</td></tr>})}</tbody></table></div></section>
+}

@@ -1,0 +1,32 @@
+EMBRIOGESTOR 2.0 — FASE 14.13 — MULTI-REDE
+
+OBJETIVO
+O EmbrioGestor deve ser aberto por um endereço HTTPS publicado, e não pelo endereço
+192.168.x.x do computador. Assim celular e computador podem estar em qualquer Wi-Fi
+ou rede móvel.
+
+O QUE JÁ ESTÁ PREPARADO
+1. Supabase já configurado no sistema para autenticação e sincronização em nuvem.
+2. Realtime + verificação periódica de alterações entre dispositivos.
+3. PWA para celular.
+4. Vite com caminhos relativos para funcionar no GitHub Pages.
+5. Workflow .github/workflows/deploy-pages.yml para publicar automaticamente a pasta dist.
+6. Tanto celular quanto computador usam o mesmo banco remoto do usuário/owner.
+7. Alterações feitas em qualquer dispositivo são salvas localmente e enviadas à nuvem.
+
+PUBLICAÇÃO NO GITHUB
+- Substitua os arquivos do repositório embriogestor por esta versão.
+- Faça commit e push para a branch main.
+- No GitHub: Settings > Pages > Source = GitHub Actions.
+- Aguarde o workflow "Publicar EmbrioGestor".
+- Abra o endereço HTTPS do GitHub Pages no computador e no celular.
+- Entre com a mesma conta/conta vinculada ao mesmo laboratório.
+
+IMPORTANTE
+O endereço de teste "http://192.168..." continua sendo apenas para desenvolvimento local.
+Para funcionar em QUALQUER Wi-Fi, use sempre o endereço HTTPS publicado.
+
+SUPABASE
+O projeto já contém a configuração publishable do Supabase. As tabelas/RLS/RPC/Reatime
+da Fase 14.2 precisam continuar existentes no mesmo projeto Supabase. Não use service-role
+key no navegador.

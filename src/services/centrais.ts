@@ -1,0 +1,21 @@
+export const CENTRAIS_BRASIL = [
+  'ABS Brasil / ABS Pecplan',
+  'AG Brasil Inseminação Artificial',
+  'Alta Genetics',
+  'Araucária Genética Bovina',
+  'Central Bela Vista',
+  'CRIO Central Genética Bovina',
+  'CRV',
+  'GENEX',
+  'Progen',
+  'Renascer Biotecnologia',
+  'Select Sires do Brasil',
+  'Seleon Biotecnologia',
+  'Semex Brasil',
+  'ST Genetics',
+  'Tairana Central de Inseminação Artificial',
+  'Zebuembryo',
+  'Evolution do Brasil',
+  'Central Rima Genética',
+  'Synetics Brasil'
+].sort((a,b)=>a.localeCompare(b,'pt-BR'))
