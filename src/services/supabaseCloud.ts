@@ -181,6 +181,7 @@ export async function consumeOAuthSessionFromUrl(){
   const hash=window.location.hash.startsWith('#')?window.location.hash.slice(1):''
   if(!hash)return null
   const p=new URLSearchParams(hash)
+  const recovery=p.get('type')==='recovery'
   const access=p.get('access_token'),refresh=p.get('refresh_token')
   if(!access||!refresh)return null
   const expiresIn=Number(p.get('expires_in')||3600)
@@ -198,7 +199,22 @@ export async function consumeOAuthSessionFromUrl(){
   resetSyncContextForUser(s.user.id)
   history.replaceState({},document.title,window.location.pathname+window.location.search)
   window.dispatchEvent(new CustomEvent('embrio-cloud-status'))
-  return s
+  return {session:s,recovery}
+}
+
+export async function updatePassword(password:string){
+  if(password.length<6)throw new Error('A nova senha precisa ter pelo menos 6 caracteres.')
+  const c=getSupabaseConfig()
+  if(!c)throw new Error('Supabase não configurado.')
+  const s=await validSession()
+  const r=await fetch(`${c.url}/auth/v1/user`,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json','apikey':c.anonKey,Authorization:`Bearer ${s.access_token}`},
+    body:JSON.stringify({password})
+  })
+  const data=await jsonOrText(r)
+  if(!r.ok)throw new Error(errorMessage(data,'Não foi possível alterar a senha.'))
+  return true
 }
 
 export function appReturnUrl(){

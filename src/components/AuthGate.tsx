@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { IdentidadeEmpresa, NivelAcesso, PerfilAcesso } from '../types/domain'
 import {
   consumeOAuthSessionFromUrl, fetchRemoteCompanyIdentity,getMyProfile,getSession,getSupabaseConfig,
-  signIn,signInWithGoogle,signOutLocal,signUp,oauthDisponivelNesteEndereco,requestPasswordReset
+  signIn,signInWithGoogle,signOutLocal,signUp,oauthDisponivelNesteEndereco,requestPasswordReset,updatePassword
 } from '../services/supabaseCloud'
 
 const niveis:{id:NivelAcesso;titulo:string;descricao:string}[]=[
@@ -61,11 +61,19 @@ export function AuthGate({children}:{children:(perfil:PerfilAcesso)=>React.React
   const[modo,setModo]=useState<'login'|'cadastro'>('login')
   const[nome,setNome]=useState('')
   const[confirmar,setConfirmar]=useState('')
+  const[recuperandoSenha,setRecuperandoSenha]=useState(false)
+  const[novaSenha,setNovaSenha]=useState('')
+  const[confirmarNovaSenha,setConfirmarNovaSenha]=useState('')
   
   async function carregar(){
     setLoading(true)
     try{
-      await consumeOAuthSessionFromUrl()
+      const retorno=await consumeOAuthSessionFromUrl()
+      if(retorno?.recovery){
+        setPerfil(null)
+        setRecuperandoSenha(true)
+        return
+      }
       await fetchRemoteCompanyIdentity()
       if(getSession()){
         const p=await getMyProfile()
@@ -115,6 +123,23 @@ export function AuthGate({children}:{children:(perfil:PerfilAcesso)=>React.React
     finally{setLoading(false)}
   }
 
+  async function salvarNovaSenha(){
+    setMsg('')
+    if(novaSenha.length<6){setMsg('A nova senha precisa ter pelo menos 6 caracteres.');return}
+    if(novaSenha!==confirmarNovaSenha){setMsg('As senhas não conferem.');return}
+    setLoading(true)
+    try{
+      await updatePassword(novaSenha)
+      signOutLocal()
+      setPerfil(null)
+      setRecuperandoSenha(false)
+      setNovaSenha('')
+      setConfirmarNovaSenha('')
+      setMsg('Senha alterada com sucesso. Entre novamente com a nova senha.')
+    }catch(e:any){setMsg(e?.message||'Não foi possível alterar a senha.')}
+    finally{setLoading(false)}
+  }
+
   async function criar(){
     setMsg('')
     if(!nome.trim()){setMsg('Informe seu nome.');return}
@@ -144,6 +169,19 @@ export function AuthGate({children}:{children:(perfil:PerfilAcesso)=>React.React
 
   if(loading)return <div className="access-screen"><div className="access-card access-loading-brand">{marca}<h1>EmbrioGestor</h1><p>Carregando acesso...</p></div></div>
 
+
+  if(recuperandoSenha)return <div className="access-screen">
+    <div className="access-card">
+      <div className="access-company-identity compact">{marca}</div>
+      <div className="access-login-kicker">RECUPERAÇÃO DE SENHA</div>
+      <h2>Definir nova senha</h2>
+      <p>Crie uma nova senha para continuar usando o EmbrioGestor.</p>
+      <label>Nova senha<input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} /></label>
+      <label>Confirmar nova senha<input type="password" value={confirmarNovaSenha} onChange={e=>setConfirmarNovaSenha(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')salvarNovaSenha()}} /></label>
+      {msg&&<div className="access-msg">{msg}</div>}
+      <button className="access-primary" onClick={salvarNovaSenha}>Salvar nova senha</button>
+    </div>
+  </div>
 
   if(!getSession())return <div className="access-screen">
     <div className="access-shell">
