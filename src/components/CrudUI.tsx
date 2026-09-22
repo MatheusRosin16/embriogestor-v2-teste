@@ -5,8 +5,24 @@ export function SearchBar({value,onChange,placeholder}:{value:string,onChange:(v
 }
 
 export function Modal({title,onClose,children}:{title:string,onClose:()=>void,children:ReactNode}){
+  useEffect(()=>{
+    const viewport=window.visualViewport
+    if(!viewport)return
+    const manterCampoVisivel=()=>{
+      const ativo=document.activeElement as HTMLElement|null
+      if(!ativo||!['INPUT','TEXTAREA','SELECT'].includes(ativo.tagName))return
+      window.setTimeout(()=>ativo.scrollIntoView({block:'center',behavior:'smooth'}),80)
+    }
+    viewport.addEventListener('resize',manterCampoVisivel)
+    return()=>viewport.removeEventListener('resize',manterCampoVisivel)
+  },[])
+  const focarCampo=(e:React.FocusEvent<HTMLDivElement>)=>{
+    const alvo=e.target as HTMLElement
+    if(!['INPUT','TEXTAREA','SELECT'].includes(alvo.tagName))return
+    window.setTimeout(()=>alvo.scrollIntoView({block:'center',behavior:'smooth'}),120)
+  }
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <div className="modal-box" data-enter-flow="true" onMouseDown={e=>e.stopPropagation()}>
+    <div className="modal-box" data-enter-flow="true" onFocusCapture={focarCampo} onMouseDown={e=>e.stopPropagation()}>
       <div className="modal-head"><h3>{title}</h3><button onClick={onClose}>×</button></div>
       {children}
     </div>

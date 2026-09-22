@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { BancoEmbrioGestor, Producao, Aspiracao, ServicoSemen, MovimentacaoItem, EstoqueEmbriaoItem, Transferencia } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
 import { handleEnterFlow } from '../components/EnterFlow'
@@ -31,6 +31,37 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   const[clienteAberto,setClienteAberto]=useState<string|null>(null)
   const[dataAberta,setDataAberta]=useState<string|null>(null)
 
+  // Repara também produções antigas que foram cadastradas sem ficha de aspiração.
+  useEffect(()=>{
+    let mudou=false
+    let aspiracoes=[...db.aspiracoes]
+    let producoes=[...db.producoes]
+    const grupos=new Map<string,Producao[]>()
+    for(const p of producoes){
+      if(!p.clienteId||!p.doadoraId||!p.data)continue
+      const k=[p.clienteId,p.doadoraId,p.data].join('|')
+      if(!grupos.has(k))grupos.set(k,[])
+      grupos.get(k)!.push(p)
+    }
+    for(const itens of grupos.values()){
+      const p=itens[0]
+      let asp=aspiracoes.find(a=>a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&a.data===p.data)
+      if(!asp){
+        asp={id:id('ASP'),data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:itens.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:itens.reduce((v,x)=>v+n(x.oocitosViaveis),0),geradaPelaProducao:true,touroId:p.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
+        aspiracoes.push(asp);mudou=true
+      }else if(asp.geradaPelaProducao){
+        const total=itens.reduce((v,x)=>v+n(x.oocitos),0),viaveis=itens.reduce((v,x)=>v+n(x.oocitosViaveis),0)
+        if(n(asp.oocitosTotaisInformados)!==total||n(asp.oocitosViaveisInformados)!==viaveis){
+          aspiracoes=aspiracoes.map(a=>a.id===asp!.id?{...a,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis}:a);mudou=true
+        }
+      }
+      if(itens.some(x=>x.origemAspiracaoId!==asp!.id)){
+        const ids=new Set(itens.map(x=>x.id));producoes=producoes.map(x=>ids.has(x.id)?{...x,origemAspiracaoId:asp!.id}:x);mudou=true
+      }
+    }
+    if(mudou)onChange({...db,aspiracoes,producoes})
+  },[db.aspiracoes,db.producoes])
+
   const grupos=useMemo(()=>{
     const m=new Map<string,Producao[]>()
 
@@ -57,7 +88,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
         cliente:db.clientes.find(c=>c.id===clienteId),
         clienteId,
         data,
-        itens
+        itens:[...itens].sort((a,b)=>(n(a.ordem)-n(b.ordem)) || db.producoes.indexOf(a)-db.producoes.indexOf(b))
       }
     }).filter(g=>g.cliente)
       .sort((a,b)=>a.cliente!.nome.localeCompare(b.cliente!.nome,'pt-BR')||b.data.localeCompare(a.data))
@@ -99,6 +130,35 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     return resultado
   }
 
+  function proximaOrdem(clienteId:string,data:string){
+    const itens=db.producoes.filter(p=>p.clienteId===clienteId&&String(p.data||'').slice(0,10)===String(data||'').slice(0,10))
+    return itens.reduce((m,p,i)=>Math.max(m,Number(p.ordem)||i+1),0)+1
+  }
+
+  function moverProducao(p:Producao,direcao:-1|1){
+    const itens=db.producoes
+      .filter(x=>x.clienteId===p.clienteId&&String(x.data||'').slice(0,10)===String(p.data||'').slice(0,10))
+      .sort((a,b)=>(n(a.ordem)-n(b.ordem)) || db.producoes.indexOf(a)-db.producoes.indexOf(b))
+    const idx=itens.findIndex(x=>x.id===p.id), destino=idx+direcao
+    if(idx<0||destino<0||destino>=itens.length)return
+    const ids=[...itens.map(x=>x.id)]; [ids[idx],ids[destino]]=[ids[destino],ids[idx]]
+    const ordem=new Map(ids.map((id,i)=>[id,i+1]))
+    onChange({...db,producoes:db.producoes.map(x=>ordem.has(x.id)?{...x,ordem:ordem.get(x.id)}:x)})
+  }
+
+  function sincronizarAspiracaoDaProducao(baseAspiracoes:Aspiracao[],producoes:Producao[],item:Producao){
+    const existente=baseAspiracoes.find(a=>a.clienteId===item.clienteId&&a.doadoraId===item.doadoraId&&a.data===item.data)
+    if(existente&&!existente.geradaPelaProducao)return {aspiracoes:baseAspiracoes,aspiracaoId:existente.id}
+    const relacionadas=producoes.filter(p=>p.clienteId===item.clienteId&&p.doadoraId===item.doadoraId&&p.data===item.data)
+    const total=relacionadas.reduce((s,p)=>s+n(p.oocitos),0)
+    const viaveis=relacionadas.reduce((s,p)=>s+n(p.oocitosViaveis),0)
+    if(existente){
+      return {aspiracoes:baseAspiracoes.map(a=>a.id===existente.id?{...a,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,touroId:a.touroId||item.touroId||''}:a),aspiracaoId:existente.id}
+    }
+    const nova:Aspiracao={id:id('ASP'),data:item.data,clienteId:item.clienteId,doadoraId:item.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,geradaPelaProducao:true,touroId:item.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
+    return {aspiracoes:[...baseAspiracoes,nova],aspiracaoId:nova.id}
+  }
+
   function salvarEdicao(p:Producao){
     const antigo=db.producoes.find(x=>x.id===p.id)
     const atualizado={...p,clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
@@ -112,74 +172,40 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       movimentacoes=[...movimentacoes,mov]
     }
     sincronizarTipo('DT',atualizado.congeladosDT,n(antigo?.congeladosDT));sincronizarTipo('VT',atualizado.congeladosVT,n(antigo?.congeladosVT))
+    if(n(atualizado.oocitosViaveis)>n(atualizado.oocitos))return alert('Os oócitos viáveis não podem ser maiores que os oócitos totais.')
+    let producoes=db.producoes.map(x=>x.id===p.id?atualizado:x)
+    const sync=sincronizarAspiracaoDaProducao(db.aspiracoes,producoes,atualizado)
+    producoes=producoes.map(x=>x.id===atualizado.id?{...x,origemAspiracaoId:x.origemAspiracaoId||sync.aspiracaoId}:x)
     const transferencias=sincronizarTransferenciasFresco(db.transferencias,atualizado,atualizado.transferidosFresco)
-    onChange({...db,producoes:db.producoes.map(x=>x.id===p.id?atualizado:x),estoqueEmbrioes,movimentacoes,transferencias});setEdit(null)
+    onChange({...db,aspiracoes:sync.aspiracoes,producoes,estoqueEmbrioes,movimentacoes,transferencias});setEdit(null)
   }
-  function salvarManual(p:Producao){
+  function salvarManual(p:Producao,continuarDivisao=false){
     if(!p.data||!p.clienteId||!p.doadoraId)return alert('Informe data, cliente e doadora.')
+    if(n(p.oocitosViaveis)>n(p.oocitos))return alert('Os oócitos viáveis não podem ser maiores que os oócitos totais.')
 
-    const item:Producao={
-      ...p,
-      id:p.id||id('PROD'),
-      oocitos:n(p.oocitos),
-      oocitosViaveis:n(p.oocitosViaveis),
-      clivados:n(p.clivados),
-      embriõesD7:n(p.embriõesD7),
-      transferidosFresco:n(p.transferidosFresco),
-      congeladosDT:n(p.congeladosDT),
-      congeladosVT:n(p.congeladosVT)
-    }
-
-    // Se a produção foi lançada diretamente e ainda não existe uma OPU para
-    // cliente + doadora + data, cria a aspiração automaticamente.
-    const aspiracaoExistente=db.aspiracoes.find(a=>
-      a.clienteId===item.clienteId &&
-      a.doadoraId===item.doadoraId &&
-      a.data===item.data
-    )
-
-    let aspiracoes=db.aspiracoes
-    let aspiracaoId=aspiracaoExistente?.id
-
-    if(!aspiracaoExistente){
-      const novaAspiracao:Aspiracao={
-        id:id('ASP'),
-        data:item.data,
-        clienteId:item.clienteId,
-        doadoraId:item.doadoraId,
-        grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,
-        oocitosTotaisInformados:n(item.oocitos),
-        oocitosViaveisInformados:n(item.oocitosViaveis),
-        geradaPelaProducao:true,
-        touroId:item.touroId||'',
-        obs:'Aspiração gerada automaticamente a partir de lançamento direto na Produção de Embriões.'
-      }
-      aspiracoes=[...db.aspiracoes,novaAspiracao]
-      aspiracaoId=novaAspiracao.id
-    }else if(aspiracaoExistente.geradaPelaProducao){
-      // Se esta OPU já foi criada automaticamente por esta rotina, mantém
-      // totais/viáveis sincronizados com a produção sem inventar graus.
-      aspiracoes=db.aspiracoes.map(a=>a.id===aspiracaoExistente.id?{
-        ...a,
-        oocitosTotaisInformados:n(item.oocitos),
-        oocitosViaveisInformados:n(item.oocitosViaveis),
-        touroId:item.touroId||a.touroId
-      }:a)
-    }
-
-    const itemVinculado={...item,origemAspiracaoId:item.origemAspiracaoId||aspiracaoId}
-    const producoes=p.id
-      ? db.producoes.map(x=>x.id===p.id?itemVinculado:x)
-      : [...db.producoes,itemVinculado]
+    const item:Producao={...p,id:p.id||id('PROD'),ordem:p.ordem||proximaOrdem(p.clienteId,p.data),oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
+    let producoes=p.id?db.producoes.map(x=>x.id===p.id?item:x):[...db.producoes,item]
+    const sync=sincronizarAspiracaoDaProducao(db.aspiracoes,producoes,item)
+    const itemVinculado={...item,origemAspiracaoId:item.origemAspiracaoId||sync.aspiracaoId}
+    producoes=producoes.map(x=>x.id===item.id?itemVinculado:x)
     const transferencias=sincronizarTransferenciasFresco(db.transferencias,itemVinculado,itemVinculado.transferidosFresco)
-
-    onChange({...db,aspiracoes,producoes,transferencias})
-    setManual(null)
+    onChange({...db,aspiracoes:sync.aspiracoes,producoes,transferencias})
+    if(continuarDivisao){
+      setManual({...novaProd,data:item.data,clienteId:item.clienteId,doadoraId:item.doadoraId,origemAspiracaoId:sync.aspiracaoId,ordem:(item.ordem||0)+1})
+    }else setManual(null)
   }
 
   function excluirProducao(p:Producao){
     if(confirm('Excluir esta produção?')){
-      onChange({...db,producoes:db.producoes.filter(x=>x.id!==p.id)})
+      const producoes=db.producoes.filter(x=>x.id!==p.id)
+      let aspiracoes=[...db.aspiracoes]
+      const asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId || (a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&a.data===p.data))
+      if(asp?.geradaPelaProducao){
+        const restantes=producoes.filter(x=>x.clienteId===p.clienteId&&x.doadoraId===p.doadoraId&&x.data===p.data)
+        if(!restantes.length)aspiracoes=aspiracoes.filter(a=>a.id!==asp.id)
+        else aspiracoes=aspiracoes.map(a=>a.id===asp.id?{...a,oocitosTotaisInformados:restantes.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:restantes.reduce((v,x)=>v+n(x.oocitosViaveis),0)}:a)
+      }
+      onChange({...db,aspiracoes,producoes})
     }
   }
 
@@ -256,7 +282,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
                 <button className="date-folder-button" onClick={()=>{if(!forcarAberto)setDataAberta(dataOpen?null:chave)}}><span className="date-folder-icon">▰</span><span><strong>{g.data.split('-').reverse().join('/')}</strong><small>{g.itens.length} produção(ões) • {servicos.length} serviço(s)</small></span></button>
                 {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Produção de {g.data.split('-').reverse().join('/')}</strong>{!forcarAberto&&<button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button>}</div>
                 <div className="table-wrap"><table><thead><tr><th>Doadora</th><th>Raça</th><th>Touro</th><th>Raça</th><th>Oócitos totais</th><th>Viáveis</th><th>Clivados</th><th>% Cliv.</th><th>Embriões D7</th><th>% Prod.</th><th>Fresco</th><th>Cong. DT</th><th>Cong. VT</th><th>Total cong.</th><th>Ações</th></tr></thead><tbody>
-                {g.itens.map(p=>{const d=db.doadoras.find(x=>x.id===p.doadoraId);const rd=db.racas.find(x=>x.id===d?.racaId);const t=db.touros.find(x=>x.id===p.touroId);const rt=db.racas.find(x=>x.id===t?.racaId);const pctCliv=p.oocitosViaveis?Math.round((p.clivados/p.oocitosViaveis)*100)+'%':'0%';const pctProd=p.oocitosViaveis?Math.round((p.embriõesD7/p.oocitosViaveis)*100)+'%':'0%';const totalCong=n(p.congeladosDT)+n(p.congeladosVT);return <tr key={p.id}><td><strong>{d?.nome||'—'}</strong></td><td>{rd?.abreviatura||d?.raca||'—'}</td><td>{t?.nome||'—'}</td><td>{rt?.abreviatura||t?.raca||'—'}</td><td>{p.oocitos}</td><td>{p.oocitosViaveis}</td><td>{p.clivados}</td><td>{pctCliv}</td><td>{p.embriõesD7}</td><td>{pctProd}</td><td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td><td>{totalCong}</td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...p})}>Editar</button><button className="btn small danger" onClick={()=>excluirProducao(p)}>Excluir</button></div></td></tr>})}
+                {g.itens.map(p=>{const d=db.doadoras.find(x=>x.id===p.doadoraId);const rd=db.racas.find(x=>x.id===d?.racaId);const t=db.touros.find(x=>x.id===p.touroId);const rt=db.racas.find(x=>x.id===t?.racaId);const pctCliv=p.oocitosViaveis?Math.round((p.clivados/p.oocitosViaveis)*100)+'%':'0%';const pctProd=p.oocitosViaveis?Math.round((p.embriõesD7/p.oocitosViaveis)*100)+'%':'0%';const totalCong=n(p.congeladosDT)+n(p.congeladosVT);return <tr key={p.id}><td><strong>{d?.nome||'—'}</strong></td><td>{rd?.abreviatura||d?.raca||'—'}</td><td>{t?.nome||'—'}</td><td>{rt?.abreviatura||t?.raca||'—'}</td><td>{p.oocitos}</td><td>{p.oocitosViaveis}</td><td>{p.clivados}</td><td>{pctCliv}</td><td>{p.embriõesD7}</td><td>{pctProd}</td><td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td><td>{totalCong}</td><td><div className="actions production-row-actions"><button className="btn small order-btn" title="Mover para cima" onClick={()=>moverProducao(p,-1)}>↑</button><button className="btn small order-btn" title="Mover para baixo" onClick={()=>moverProducao(p,1)}>↓</button><button className="btn small" onClick={()=>setEdit({...p})}>Editar</button><button className="btn small" onClick={()=>setManual({...novaProd,data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,origemAspiracaoId:p.origemAspiracaoId,ordem:proximaOrdem(p.clienteId,p.data)})}>Dividir</button><button className="btn small danger" onClick={()=>excluirProducao(p)}>Excluir</button></div></td></tr>})}
                 </tbody></table></div>
                 <section className="service-box"><div className="service-head"><strong>Sêmen utilizado no serviço</strong><button className="btn small" onClick={()=>abrirServico(g.clienteId,g.data)}>Registrar doses do serviço</button></div>{servicos.length?<div className="table-wrap service-table"><table><thead><tr><th>Touro</th><th>Raça</th><th>Partida</th><th>Doses</th><th>Ações</th></tr></thead><tbody>{servicos.map(ss=>{const t=db.touros.find(x=>x.id===ss.touroId);const r=db.racas.find(x=>x.id===t?.racaId);return <tr key={ss.id}><td><strong>{t?.nome||'—'}</strong></td><td>{r?.abreviatura||t?.raca||'—'}</td><td>{ss.partida||'—'}</td><td>{Number(ss.doses).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2})}</td><td><div className="actions"><button className="btn small" onClick={()=>abrirServico(g.clienteId,g.data,ss)}>Editar</button><button className="btn small danger" onClick={()=>excluirServico(ss)}>Excluir</button></div></td></tr>})}</tbody></table></div>:<div className="service-empty">Nenhum sêmen registrado para este serviço.</div>}</section>
                 </div>}
@@ -278,6 +304,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
         <Field label="Oócitos totais"><input type="number" min="0" value={manual.oocitos} onChange={e=>setManual({...manual,oocitos:n(e.target.value)})}/></Field>
         <Field label="Oócitos viáveis"><input type="number" min="0" value={manual.oocitosViaveis} onChange={e=>setManual({...manual,oocitosViaveis:n(e.target.value)})}/></Field>
+        <Field label="Desnudos / não viáveis"><input value={Math.max(0,n(manual.oocitos)-n(manual.oocitosViaveis))} readOnly /></Field>
 
         <Field label="Touro"><SearchableSelect value={manual.touroId||''} onChange={v=>setManual({...manual,touroId:v})} options={tourosClienteManual.map(t=>({value:t.id,label:t.nome,search:[t.registro,t.codigo,t.tipoSemen].join(' ')}))} placeholder="Digite o nome do touro"/></Field>
 
@@ -291,6 +318,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
       <div className="modal-actions">
         <button className="btn" onClick={()=>setManual(null)}>Cancelar</button>
+        <button className="btn" onClick={()=>salvarManual(manual,true)}>Salvar e dividir doadora</button>
         <button className="btn primary" data-enter-final="true" onClick={()=>salvarManual(manual)}>Salvar produção</button>
       </div>
     </Modal>}
@@ -305,6 +333,9 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       </div>
 
       <div className="form-grid" onKeyDown={handleEnterFlow}>
+        <Field label="Oócitos destinados"><input type="number" min="0" value={edit.oocitos} onChange={e=>setEdit({...edit,oocitos:n(e.target.value)})}/></Field>
+        <Field label="Viáveis destinados"><input type="number" min="0" value={edit.oocitosViaveis} onChange={e=>setEdit({...edit,oocitosViaveis:n(e.target.value)})}/></Field>
+        <Field label="Desnudos / não viáveis"><input value={Math.max(0,n(edit.oocitos)-n(edit.oocitosViaveis))} readOnly /></Field>
         <Field label="Touro"><SearchableSelect value={edit.touroId||''} onChange={v=>setEdit({...edit,touroId:v})} options={tourosClienteEdit.map(t=>({value:t.id,label:t.nome,search:[t.registro,t.codigo,t.tipoSemen].join(' ')}))} placeholder="Digite o nome do touro"/></Field>
 
         <Field label="Clivados"><input type="number" min="0" value={edit.clivados} onChange={e=>setEdit({...edit,clivados:n(e.target.value)})}/></Field>

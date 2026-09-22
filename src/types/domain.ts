@@ -91,6 +91,7 @@ export interface Producao {
   congeladosDT: number
   congeladosVT: number
   origemAspiracaoId?: string
+  ordem?: number
   obs?: string
 }
 

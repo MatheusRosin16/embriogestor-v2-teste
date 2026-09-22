@@ -1176,3 +1176,15 @@ body{min-width:320px}
 @media(max-width:650px){.sync-inline-button{margin-left:5px!important;padding:2px 5px!important;font-size:.64em!important}}
 
 .forgot-password{display:block!important;margin:-2px 0 8px auto!important;padding:2px 0!important;font-size:.84rem!important;width:auto!important}
+
+
+/* FASE 14.16.3 — produção dividida, ordenação e teclado móvel */
+.production-row-actions{flex-wrap:nowrap}.order-btn{min-width:34px;padding-left:8px!important;padding-right:8px!important;font-size:16px!important}
+@media(max-width:740px){
+  .modal-backdrop{height:100dvh!important;min-height:100dvh!important;padding:6px 6px max(6px,env(safe-area-inset-bottom))!important;align-items:flex-end!important;overflow:hidden!important}
+  .modal-box{max-height:calc(100dvh - 12px)!important;overflow-y:auto!important;overscroll-behavior:contain;scroll-padding-top:72px!important;scroll-padding-bottom:45vh!important;padding-bottom:max(24px,env(safe-area-inset-bottom))!important}
+  .modal-box input,.modal-box select,.modal-box textarea{font-size:16px!important;min-height:46px}
+  .modal-actions{position:sticky;bottom:-14px;z-index:3;background:#fff;padding:10px 0 max(8px,env(safe-area-inset-bottom));flex-wrap:wrap}
+  .modal-actions .btn{flex:1 1 140px}
+  .production-row-actions{flex-wrap:wrap;min-width:210px}
+}
