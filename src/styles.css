@@ -1210,3 +1210,13 @@ body{min-width:320px}
   .legacy-report-sheet{font-family:Arial,Helvetica,sans-serif!important}
   .legacy-table tr,.legacy-semen,.legacy-grand,.client-signature{break-inside:avoid;page-break-inside:avoid}
 }
+
+/* Fase relatórios 2 — fechamento compacto das tabelas e totais */
+.legacy-summary{margin-top:0!important;margin-bottom:4px!important;border-collapse:collapse!important}
+.legacy-summary th,.legacy-summary td{height:auto!important;min-height:0!important;padding:4px 6px!important;line-height:1.15!important}
+.legacy-grand{margin:4px 0 7px!important;padding:5px 7px!important;line-height:1.2!important}
+.legacy-report-sheet .legacy-table+ .legacy-summary{margin-top:-1px!important}
+@media print{
+ .legacy-summary{margin-top:0!important;margin-bottom:3px!important}
+ .legacy-grand{margin:3px 0 5px!important;padding:4px 6px!important}
+}

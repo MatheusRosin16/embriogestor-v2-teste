@@ -76,12 +76,14 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
     const ano=String(data||'').slice(0,4)
     if(!ano)return ''
     const mapa=new Map<string,{clienteId:string;data:string}>()
-    db.producoes.filter(p=>String(p.data||'').startsWith(ano+'-')).forEach(p=>{
-      const d=String(p.data||'').slice(0,10), chave=`${p.clienteId}|${d}`
+    // A sessão reinicia para cada cliente em cada ano. Todas as linhas do mesmo
+    // cliente na mesma data (inclusive doadoras divididas) pertencem à mesma sessão.
+    db.producoes.filter(p=>p.clienteId===clienteId&&String(p.data||'').startsWith(ano+'-')).forEach(p=>{
+      const d=String(p.data||'').slice(0,10), chave=d
       if(d&&!mapa.has(chave))mapa.set(chave,{clienteId:p.clienteId,data:d})
     })
-    const servicos=[...mapa.values()].sort((a,b)=>a.data.localeCompare(b.data)||(clienteNome(a.clienteId)).localeCompare(clienteNome(b.clienteId),'pt-BR'))
-    const idx=servicos.findIndex(x=>x.clienteId===clienteId&&x.data===String(data).slice(0,10))
+    const servicos=[...mapa.values()].sort((a,b)=>a.data.localeCompare(b.data))
+    const idx=servicos.findIndex(x=>x.data===String(data).slice(0,10))
     return idx>=0?`SESSÃO ${idx+1}/${ano}`:`SESSÃO —/${ano}`
   }
 
@@ -89,9 +91,22 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
     if(!relatorio)return null
     const cid=relatorio.clienteId
     const prods=db.producoes.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo))
-    const tes=db.transferencias.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo)).sort((a,b)=>{
+    // Além das transferências já salvas, completa visualmente eventuais linhas automáticas
+    // antigas que estejam faltando. Isso preserva cada produção dividida pelo seu ID.
+    let tes=db.transferencias.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo))
+    const extras:any[]=[]
+    prods.forEach(p=>{
+      const desejado=n(p.transferidosFresco)
+      const existentes=tes.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&t.geradaPelaProducao).length
+      for(let i=existentes;i<desejado;i++)extras.push({
+        id:`REL_AUTO_${p.id}_${i}`,data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,touroId:p.touroId||'',
+        origemProducaoId:p.id,receptora:'',embriãoEstagio:'',embriãoGrau:'',ovarioCL:'',destino:'Fresco',diagnostico:'',
+        obs:'Transferência a fresco originada da Produção.',geradaPelaProducao:true
+      })
+    })
+    tes=[...tes,...extras].sort((a,b)=>{
       const pa=db.producoes.find(p=>p.id===a.origemProducaoId),pb=db.producoes.find(p=>p.id===b.origemProducaoId)
-      return a.data.localeCompare(b.data)||(n(pa?.ordem)-n(pb?.ordem))||db.transferencias.indexOf(a)-db.transferencias.indexOf(b)
+      return a.data.localeCompare(b.data)||(n(pa?.ordem)-n(pb?.ordem))||String(a.id).localeCompare(String(b.id))
     })
     return {prods,tes}
   },[db,relatorio,tipoPeriodo,periodo])
