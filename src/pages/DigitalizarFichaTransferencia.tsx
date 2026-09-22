@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor, LinhaRelatorioTransferenciaEditavel, RelatorioTransferenciaEditavelSalvo } from '../types/domain'
+import { lerFichaTransferenciaIA } from '../services/fichaTransferenciaIA'
 
 type Linha = LinhaRelatorioTransferenciaEditavel & {confianca?:'ok'|'revisar'}
 const id=(p:string)=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)
@@ -16,6 +17,8 @@ export function DigitalizarFichaTransferencia({db,onChange,onAbrirRelatorio}:{db
  const[dataTE,setDataTE]=useState(hoje())
  const[linhas,setLinhas]=useState<Linha[]>([])
  const[status,setStatus]=useState('')
+ const[lendo,setLendo]=useState(false)
+ const[avisosIA,setAvisosIA]=useState<string[]>([])
  const[modelo,setModelo]=useState<'AUTO'|'PLANILHA'|'CAMPO'>('AUTO')
  const[dg60,setDg60]=useState<Record<string,string>>({})
  const cliente=db.clientes.find(c=>c.id===clienteId)
@@ -28,16 +31,28 @@ export function DigitalizarFichaTransferencia({db,onChange,onAbrirRelatorio}:{db
    setLinhas([])
  }
 
- function prepararRascunho(){
+ async function prepararRascunho(){
    if(!arquivo)return alert('Selecione ou fotografe uma ficha.')
-   // A leitura automática de imagem/PDF depende do serviço OCR/IA online, que será conectado
-   // quando o app for publicado. Nesta fase a captura, fila e revisão editável já funcionam.
-   if(!navigator.onLine){
-     setStatus('Ficha guardada neste aparelho. A leitura automática ficará disponível quando houver internet.')
-   }else{
-     setStatus('Ficha recebida. O conector de leitura OCR/IA será ativado na publicação online. Você já pode montar/revisar o rascunho abaixo.')
-   }
-   if(!linhas.length)setLinhas([vazio()])
+   if(!navigator.onLine){setStatus('Sem internet. A leitura por IA precisa de conexão.');return}
+   try{
+     setLendo(true);setStatus('A IA está lendo a ficha completa…');setAvisosIA([])
+     const res=await lerFichaTransferenciaIA(arquivo)
+     const data=res.cabecalho?.dataTE||dataTE
+     if(res.cabecalho?.dataTE)setDataTE(res.cabecalho.dataTE)
+     const novas:Linha[]=(res.linhas||[]).map((r)=>{
+       const q=String(r.qualidade||'').toUpperCase().replace(/\s+/g,' ').trim()
+       const est=(q.match(/\b(MO|BI|BL|BX|BN|BE)\b/)?.[1]||'') as Linha['estagioD7']
+       const gr=(q.match(/G(?:RAU\s*)?(1|2|3|I{1,3})\b/)?.[1]||'').replace('III','3').replace('II','2').replace('I','1')
+       const cl=String(r.cl||'').toUpperCase().trim()
+       const ovario=(cl.match(/\b(O[DE][123])\b/)?.[1]||'') as Linha['ovario']
+       const cav=/CAV/.test(cl)?'Sim':''
+       return {...vazio(),data,cliente:cliente?.nome||'',doadora:r.doadora||'',racaDoadora:r.racaDoadora||'',touro:r.touro||'',racaTouro:r.racaTouro||'',receptora:String(r.receptora||''),estagioD7:est,grauD7:gr?`G${gr}`:'',ovario,clCavitario:cav,diagnostico:'',confianca:r.confianca==='ok'?'ok':'revisar'}
+     })
+     setLinhas(novas.length?novas:[vazio()])
+     setAvisosIA([...(res.avisos||[]),...res.linhas.filter(x=>x.alerta).map(x=>`Linha ${x.numero||'?'}: ${x.alerta}`)])
+     setStatus(`Leitura concluída: ${novas.length} linha(s). Confira os campos marcados para revisão antes de salvar.`)
+   }catch(e:any){setStatus(`Não foi possível ler a ficha: ${e?.message||e}`);if(!linhas.length)setLinhas([vazio()])}
+   finally{setLendo(false)}
  }
 
  function alterar(i:number,k:keyof Linha,v:any){setLinhas(a=>a.map((x,n)=>n===i?{...x,[k]:v}:x))}
@@ -78,14 +93,14 @@ export function DigitalizarFichaTransferencia({db,onChange,onAbrirRelatorio}:{db
       </div>
       {arquivo&&<div className="scan-file-name"><strong>{arquivo.name}</strong><small>{Math.round(arquivo.size/1024)} KB</small></div>}
       {preview?<img className="scan-preview" src={preview} alt="Prévia da ficha"/>:<div className="scan-placeholder">A foto da ficha aparecerá aqui.</div>}
-      <button className="btn primary" disabled={!arquivo} onClick={prepararRascunho}>Ler ficha e gerar rascunho</button>
-      {status&&<div className="scan-status">{status}</div>}
+      <button className="btn primary" disabled={!arquivo||lendo} onClick={prepararRascunho}>{lendo?'Lendo ficha com IA…':'Ler ficha com IA e gerar rascunho'}</button>
+      {status&&<div className="scan-status">{status}</div>}{!!avisosIA.length&&<div className="note-box"><strong>Atenção na conferência:</strong><ul>{avisosIA.slice(0,12).map((a,i)=><li key={i}>{a}</li>)}</ul></div>}
     </div>
     <div className="scan-card">
       <h3>Dados do rascunho</h3>
       <label><span>Cliente</span><select value={clienteId} onChange={e=>setClienteId(e.target.value)}>{db.clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</select></label>
       <label><span>Data da transferência</span><input type="date" value={dataTE} onChange={e=>setDataTE(e.target.value)}/></label>
-      <div className="scan-info">Um único módulo aceita a planilha antiga e a ficha de campo manuscrita SÊMINNA. No modo automático, o leitor online identificará o modelo. Repetições manuscritas (como ||) serão tratadas como “repetir linha anterior”, e identificações com zero à esquerda serão preservadas. A ficha original nunca altera o estoque automaticamente.</div>
+      <div className="scan-info">Um único módulo aceita a planilha antiga e a ficha de campo manuscrita SÊMINNA. No modo automático, a IA identifica o modelo e lê a ficha inteira. Repetições manuscritas (como ||) serão tratadas como “repetir linha anterior”, e identificações com zero à esquerda serão preservadas. A ficha original nunca altera o estoque automaticamente.</div>
     </div>
    </div>
    {!!linhas.length&&<div className="scan-review">

@@ -273,19 +273,16 @@ export async function pushDatabase(db:BancoEmbrioGestor,{backup=true}:{backup?:b
   if(!perfil)throw new Error('Perfil de acesso não encontrado.')
   if(perfil.role==='CLIENTE')throw new Error('Acesso de cliente é somente leitura.')
   const revision=Date.now()
-  const payload={
-    user_id:perfil.owner_id,
-    payload:db,
-    revision,
-    updated_at:new Date().toISOString()
+  let remote:any
+  if(perfil.role==='VETERINARIO'){
+    if(!perfil.profissional_id)throw new Error('Seu acesso veterinário ainda não foi vinculado a um profissional pelo administrador.')
+    const r=await api('/rest/v1/rpc/embrio_save_vet_state',{method:'POST',body:JSON.stringify({new_payload:db})})
+    remote=await r.json()
+  }else{
+    const payload={user_id:perfil.owner_id,payload:db,revision,updated_at:new Date().toISOString()}
+    const r=await api('/rest/v1/embrio_app_state?on_conflict=user_id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(payload)})
+    const rows=await r.json();remote=rows?.[0]
   }
-  const r=await api('/rest/v1/embrio_app_state?on_conflict=user_id',{
-    method:'POST',
-    headers:{'Prefer':'resolution=merge-duplicates,return=representation'},
-    body:JSON.stringify(payload)
-  })
-  const rows=await r.json()
-  const remote=rows?.[0]
   const syncedAt=remote?.updated_at||new Date().toISOString()
   setSyncMeta(CLOUD_DIRTY,'0')
   setSyncMeta(LAST_SYNC_KEY,syncedAt)

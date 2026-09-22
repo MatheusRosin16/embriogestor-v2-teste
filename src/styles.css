@@ -1220,3 +1220,6 @@ body{min-width:320px}
  .legacy-summary{margin-top:0!important;margin-bottom:3px!important}
  .legacy-grand{margin:3px 0 5px!important;padding:4px 6px!important}
 }
+
+/* Portal do cliente — pastas somente leitura */
+.client-readonly{overflow:hidden}.client-folder{border:1px solid #d8e2ea;border-radius:10px;margin:8px 0;background:#fff;overflow:hidden}.client-folder-head{width:100%;border:0;background:#f5f8fa;padding:12px 14px;display:flex;align-items:center;gap:10px;text-align:left;color:#173d58;cursor:pointer}.client-folder-head:hover{background:#eef5f9}.client-folder-head>span:last-child{display:flex;flex-direction:column;gap:2px}.client-folder-head small{font-weight:400;color:#6c7f8d}.client-folder-icon{font-size:18px;width:18px}.client-folder-body{padding:10px;background:#fff}.client-production-summary{margin-top:10px;border:1px solid #cbdbe6;border-radius:8px;padding:10px 12px;display:flex;gap:8px 18px;flex-wrap:wrap;background:#f7fafc;font-size:12px}.client-production-summary>strong{width:100%;color:#164568}.client-production-summary .total{font-weight:700;border-left:3px solid #164568;padding-left:10px}.empty-state{padding:14px;color:#6c7f8d}

@@ -12,8 +12,11 @@ export function Acessos({db}:{db:BancoEmbrioGestor}){
 
   async function alterar(p:PerfilAcesso,patch:Partial<PerfilAcesso>){
     try{
+      const role=(patch.role||p.role) as NivelAcesso
+      const profId=patch.profissional_id===undefined?p.profissional_id:patch.profissional_id
+      if(role==='VETERINARIO'&&patch.ativo===true&&!profId)throw new Error('Selecione primeiro o profissional que será vinculado a este veterinário.')
       await updateProfile(p.user_id,{
-        role:(patch.role||p.role) as NivelAcesso,
+        role,
         cliente_id:patch.cliente_id===undefined?p.cliente_id:patch.cliente_id,
         profissional_id:patch.profissional_id===undefined?p.profissional_id:patch.profissional_id,
         ativo:patch.ativo===undefined?p.ativo:patch.ativo,
@@ -46,9 +49,9 @@ export function Acessos({db}:{db:BancoEmbrioGestor}){
             <option value="">Selecione o cliente</option>{[...db.clientes].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>:<span>Todos os clientes</span>}</td>
           <td>{p.role==='VETERINARIO'?<select value={p.profissional_id||''} onChange={e=>alterar(p,{profissional_id:e.target.value||null})}>
-            <option value="">Selecione o profissional</option>{[...db.profissionais].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(prof=><option key={prof.id} value={prof.id}>{prof.nome}{prof.crmv?` — ${prof.crmv}`:''}</option>)}
+            <option value="">Selecione o profissional</option>{[...db.profissionais].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(prof=><option key={prof.id} value={prof.id}>{prof.nome}{prof.crmv?` — ${prof.crmv}`:''} • {(prof.clienteIds||[]).length} cliente(s)</option>)}
           </select>:<span>—</span>}</td>
-          <td><button className={`btn small ${p.ativo?'':'primary'}`} disabled={p.role==='ADMIN'} onClick={()=>alterar(p,{ativo:!p.ativo})}>{p.ativo?'Ativo':'Liberar acesso'}</button></td>
+          <td>{p.role==='VETERINARIO'&&p.profissional_id&&<small style={{display:'block',marginBottom:4}}>{(db.profissionais.find(x=>x.id===p.profissional_id)?.clienteIds||[]).length} cliente(s) liberado(s)</small>}<button className={`btn small ${p.ativo?'':'primary'}`} disabled={p.role==='ADMIN'} onClick={()=>alterar(p,{ativo:!p.ativo})}>{p.ativo?'Ativo':'Liberar acesso'}</button></td>
         </tr>)}</tbody>
       </table></div>
     </div>
