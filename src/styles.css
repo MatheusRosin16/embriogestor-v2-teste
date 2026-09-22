@@ -1188,3 +1188,25 @@ body{min-width:320px}
   .modal-actions .btn{flex:1 1 140px}
   .production-row-actions{flex-wrap:wrap;min-width:210px}
 }
+
+/* Fase relatórios — padronização visual e impressão */
+.modern-report-header{grid-template-columns:120px 1fr;gap:14px;padding:10px 12px 12px;border:1px solid #c8d8e6;border-radius:10px;background:#fff;margin-bottom:12px}
+.modern-report-heading h1{text-align:center;text-transform:uppercase;font-size:17px;letter-spacing:.35px;margin:2px 0 10px;color:#173f5f}
+.modern-report-meta{display:block!important;font-size:9.5px}
+.report-meta-row{display:grid;grid-template-columns:88px 1fr;gap:8px;padding:3px 0;border-top:1px solid #edf2f6;align-items:center}
+.report-meta-row:first-child{border-top:0}.report-meta-client{font-size:10.5px}.report-meta-production{grid-template-columns:52px 1fr 62px 1fr}
+.legacy-report-title{background:#173f5f;color:#fff;padding:7px 10px;border-radius:7px;letter-spacing:.25px}
+.legacy-date-title{display:flex;justify-content:space-between;align-items:center;border-left:0;border-radius:5px;background:#eaf2f8;color:#173f5f;padding:5px 8px}
+.legacy-table{border-radius:6px;overflow:hidden}.legacy-table th{background:#dce9f3;color:#173f5f;font-weight:800}.legacy-table th,.legacy-table td{border-color:#b9cddd;padding:4px 3px}
+.legacy-total td{background:#eef4f8}.legacy-grand{border-radius:6px;border-color:#bfd1df;background:#f4f8fb}
+.legacy-note{padding:6px 8px;border-left:3px solid #6d96b7;background:#f7fafc;border-radius:4px}
+.client-signature{width:280px;margin:38px auto 12px;text-align:center;font-size:9px}.client-signature span{display:block;border-top:1px solid #333;margin-bottom:5px}
+.stock-delivered-badge{display:inline-block;padding:3px 7px;border-radius:999px;background:#eef2f5;font-size:11px;font-weight:800;color:#536575}
+.editable-print-head{border:1px solid #c8d8e6!important;border-radius:10px!important;padding:10px!important;background:#fff!important}.editable-print-head>span{display:block;text-align:center;background:#173f5f;color:#fff;padding:7px;border-radius:6px;font-weight:800}.editable-report-table th{background:#dce9f3!important;color:#173f5f!important}
+@media print{
+  .modern-report-header{border-color:#9eb7ca!important;border-radius:0!important}
+  .legacy-report-title{background:#173f5f!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .legacy-table th,.legacy-date-title,.legacy-total td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .legacy-report-sheet{font-family:Arial,Helvetica,sans-serif!important}
+  .legacy-table tr,.legacy-semen,.legacy-grand,.client-signature{break-inside:avoid;page-break-inside:avoid}
+}

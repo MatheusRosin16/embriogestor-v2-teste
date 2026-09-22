@@ -40,7 +40,7 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
   const[busca,setBusca]=useState('')
   const[clienteAberto,setClienteAberto]=useState<string|null>(null)
   const empresa=db.identidadeEmpresa
-  const nomeEmpresa=empresa?.nome||'SÊMINNA – Laboratório de Reprodução Animal'
+  const nomeEmpresa=(empresa?.nome||'SÊMINNA - LABORATÓRIO DE REPRODUÇÃO ANIMAL').toUpperCase().replace(/[–—]/g,'-')
   const fantasia=empresa?.nomeFantasia||nomeEmpresa
   const enderecoEmpresa=empresa?.endereco||'AV. General Osório, 797, sala 01, Francisco Beltrão - PR'
 
@@ -82,20 +82,23 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
     })
     const servicos=[...mapa.values()].sort((a,b)=>a.data.localeCompare(b.data)||(clienteNome(a.clienteId)).localeCompare(clienteNome(b.clienteId),'pt-BR'))
     const idx=servicos.findIndex(x=>x.clienteId===clienteId&&x.data===String(data).slice(0,10))
-    return idx>=0?`Seção ${idx+1}/${ano}`:`Seção —/${ano}`
+    return idx>=0?`SESSÃO ${idx+1}/${ano}`:`SESSÃO —/${ano}`
   }
 
   const dados=useMemo(()=>{
     if(!relatorio)return null
     const cid=relatorio.clienteId
     const prods=db.producoes.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo))
-    const tes=db.transferencias.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo))
+    const tes=db.transferencias.filter(x=>x.clienteId===cid&&noPeriodo(x.data,tipoPeriodo,periodo)).sort((a,b)=>{
+      const pa=db.producoes.find(p=>p.id===a.origemProducaoId),pb=db.producoes.find(p=>p.id===b.origemProducaoId)
+      return a.data.localeCompare(b.data)||(n(pa?.ordem)-n(pb?.ordem))||db.transferencias.indexOf(a)-db.transferencias.indexOf(b)
+    })
     return {prods,tes}
   },[db,relatorio,tipoPeriodo,periodo])
 
-  function agruparData<T extends {data:string}>(itens:T[]){
+  function agruparData<T extends {data:string;ordem?:number}>(itens:T[]){
     const mp=new Map<string,T[]>()
-    ;[...itens].sort((a,b)=>a.data.localeCompare(b.data)).forEach(x=>{
+    ;[...itens].sort((a,b)=>a.data.localeCompare(b.data)||(n(a.ordem)-n(b.ordem))||itens.indexOf(a)-itens.indexOf(b)).forEach(x=>{
       const arr=mp.get(x.data)||[];arr.push(x);mp.set(x.data,arr)
     })
     return [...mp.entries()]
@@ -110,15 +113,18 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
     const cliente=db.clientes.find(c=>c.id===relatorio.clienteId)
     if(!cliente)return null
 
+    const dataProducao=relatorio.tipo==='producao'&&tipoPeriodo==='dia'&&dados.prods.length?dados.prods[0].data:''
     const head=<>
-      <div className="legacy-report-header">
-        <div className="legacy-report-brand">{empresa?.logoDataUrl?<img src={empresa.logoDataUrl} alt="Logo da empresa"/>:<span>{fantasia}</span>}</div>
-        <div>
+      <div className="legacy-report-header modern-report-header">
+        <div className="legacy-report-brand">{empresa?.logoDataUrl&&<img src={empresa.logoDataUrl} alt="Logo da empresa"/>}</div>
+        <div className="modern-report-heading">
           <h1>{nomeEmpresa}</h1>
-          <div className="legacy-report-meta">
-            <b>CLIENTE:</b><span>{nomeClienteRelatorio||cliente.nome}</span>
-            <b>PERÍODO:</b><span>{tituloPeriodo(tipoPeriodo,periodo)}</span>
-            {relatorio.tipo==='producao'&&tipoPeriodo==='dia'&&dados.prods.length>0&&<><b>SEÇÃO:</b><span>{secaoProducao(cliente.id,dados.prods[0].data)}</span></>}
+          <div className="legacy-report-meta modern-report-meta">
+            <div className="report-meta-row report-meta-client"><b>CLIENTE:</b><span>{nomeClienteRelatorio||cliente.nome}</span></div>
+            {cliente.propriedade&&<div className="report-meta-row"><b>PROPRIEDADE:</b><span>{cliente.propriedade}</span></div>}
+            {cliente.municipio&&<div className="report-meta-row"><b>MUNICÍPIO:</b><span>{cliente.municipio}</span></div>}
+            {relatorio.tipo==='producao'&&dataProducao&&<div className="report-meta-row report-meta-production"><b>DATA:</b><span>{br(dataProducao)}</span><b>SESSÃO:</b><span>{secaoProducao(cliente.id,dataProducao).replace('SESSÃO ','')}</span></div>}
+            {relatorio.tipo!=='producao'&&<div className="report-meta-row"><b>PERÍODO:</b><span>{tituloPeriodo(tipoPeriodo,periodo)}</span></div>}
           </div>
         </div>
       </div>
@@ -138,7 +144,7 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
           const t=itens.reduce((a,p)=>({o:a.o+n(p.oocitos),v:a.v+n(p.oocitosViaveis),c:a.c+n(p.clivados),e:a.e+n(p.embriõesD7),f:a.f+n(p.transferidosFresco),dt:a.dt+n(p.congeladosDT),vt:a.vt+n(p.congeladosVT)}),{o:0,v:0,c:0,e:0,f:0,dt:0,vt:0})
           const semen=db.servicosSemen.filter(s=>s.clienteId===cliente.id&&s.data===data)
           return <div key={data}>
-            <div className="legacy-date-title"><span>DATA: {br(data)}</span><span>{secaoProducao(cliente.id,data)}</span></div>
+            <div className="legacy-date-title">{tipoPeriodo==='dia'?<span>PRODUÇÃO</span>:<><span>DATA: {br(data)}</span><span>{secaoProducao(cliente.id,data)}</span></>}</div>
             <table className="legacy-table"><thead><tr>
               <th>Nº</th><th>DOADORA</th><th>RAÇA</th><th>TOURO</th><th>RAÇA</th>
               <th>OÓCITOS TOTAIS</th><th>OÓCITOS VIÁVEIS</th><th>CLIVAGEM</th><th>%CLIV</th>
@@ -156,8 +162,9 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
             {itens.some(x=>x.obs)&&<div className="legacy-note"><b>OBS:</b> {[...new Set(itens.map(x=>x.obs).filter(Boolean))].join(' | ')}</div>}
             {!!semen.length&&<div className="legacy-semen">
               <b>SÊMEN UTILIZADO NO SERVIÇO</b>
-              <table className="legacy-table small"><thead><tr><th>TOURO</th><th>RAÇA</th><th>PARTIDA</th><th>DOSES</th><th>TIPO DE SÊMEN</th></tr></thead>
-              <tbody>{semen.map(s=><tr key={s.id}><td>{touro(s.touroId)?.nome}</td><td>{racaT(s.touroId)}</td><td>{s.partida||''}</td><td>{s.doses}</td><td>{touro(s.touroId)?.tipoSemen||''}</td></tr>)}</tbody></table>
+              <table className="legacy-table small"><thead><tr><th>TOURO</th><th>RAÇA</th><th>PARTIDA</th><th>DOSES</th><th>TIPO DE SÊMEN</th><th>PRODUÇÃO % (EMBRIÕES/OÓCITOS VIÁVEIS)</th></tr></thead>
+              <tbody>{semen.map(s=>{const lp=itens.filter(p=>p.touroId===s.touroId);const vv=lp.reduce((a,p)=>a+n(p.oocitosViaveis),0),ee=lp.reduce((a,p)=>a+n(p.embriõesD7),0);return <tr key={s.id}><td>{touro(s.touroId)?.nome}</td><td>{racaT(s.touroId)}</td><td>{s.partida||''}</td><td>{s.doses}</td><td>{touro(s.touroId)?.tipoSemen||''}</td><td>{pct(ee,vv)}</td></tr>})}
+              <tr className="legacy-total"><td colSpan={5}>TOTAL</td><td>{pct(t.e,t.v)}</td></tr></tbody></table>
             </div>}
           </div>
         })}
@@ -182,7 +189,7 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
           </div>
         })}
         {!!prods.length&&<div className="legacy-grand"><b>TOTAL NO PERÍODO:</b> DT {g.dt} | VT {g.vt} | Total {g.dt+g.vt}</div>}
-        {obsRelatorio&&<div className="legacy-note"><b>OBSERVAÇÃO DO RELATÓRIO:</b> {obsRelatorio}</div>}<Rodape/>
+        {obsRelatorio&&<div className="legacy-note"><b>OBSERVAÇÃO DO RELATÓRIO:</b> {obsRelatorio}</div>}<div className="client-signature"><span></span><b>ASSINATURA DO CLIENTE</b></div><Rodape/>
       </div>
     }
 

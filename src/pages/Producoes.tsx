@@ -130,6 +130,18 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     return resultado
   }
 
+  // Garante também para dados antigos que todo embrião a fresco tenha sua linha de transferência/relatório.
+  useEffect(()=>{
+    let transferencias=[...db.transferencias]
+    let mudou=false
+    for(const p of db.producoes){
+      const qtd=n(p.transferidosFresco)
+      const atual=transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&t.geradaPelaProducao).length
+      if(atual!==qtd){transferencias=sincronizarTransferenciasFresco(transferencias,p,qtd);mudou=true}
+    }
+    if(mudou)onChange({...db,transferencias})
+  },[db.producoes,db.transferencias])
+
   function proximaOrdem(clienteId:string,data:string){
     const itens=db.producoes.filter(p=>p.clienteId===clienteId&&String(p.data||'').slice(0,10)===String(data||'').slice(0,10))
     return itens.reduce((m,p,i)=>Math.max(m,Number(p.ordem)||i+1),0)+1

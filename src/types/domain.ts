@@ -122,6 +122,9 @@ export interface EstoqueEmbriaoItem {
   raque?: string
   posicao?: string
   origemProducaoId?: string
+  entregue?: boolean
+  entregueEm?: string
+  quantidadeEntregue?: number
   obs?: string
 }
 
