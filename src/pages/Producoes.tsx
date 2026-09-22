@@ -226,13 +226,26 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     let estoque=[...db.estoque], movimentacoes=[...db.movimentacoes]
     const deltaDose=n(item.doses)-n(anterior?.doses||0)
     if(deltaDose!==0 && item.partida){
-      const idx=estoque.findIndex(e=>e.clienteId===item.clienteId&&e.touroId===item.touroId&&String(e.partida||'').trim()===String(item.partida||'').trim())
-      if(idx>=0){
-        const atual=estoque[idx]
-        if(deltaDose>0 && n(atual.saldo)<deltaDose){alert(`Saldo insuficiente desta partida. Disponível: ${atual.saldo} dose(s).`);return}
-        const novasUsadas=Math.max(0,n(atual.usadas)+deltaDose), novoSaldo=Math.max(0,n(atual.quantidade)-novasUsadas)
-        estoque[idx]={...atual,usadas:novasUsadas,saldo:novoSaldo}
-        const mov:MovimentacaoItem={id:id('MOV'),data:new Date().toISOString(),tipo:deltaDose>0?'SAIDA_SEMEN':'AJUSTE',clienteId:item.clienteId,touroId:item.touroId,estoqueId:atual.id,quantidade:Math.abs(deltaDose),descricao:deltaDose>0?`Uso de sêmen no serviço de ${item.data}${item.partida?' — partida '+item.partida:''}`:`Ajuste de doses do serviço de ${item.data}`}
+      const chave=(v:any)=>String(v||'').trim().toLowerCase().replace(/\s+/g,'')
+      const indices=estoque.map((e,i)=>({e,i})).filter(({e})=>e.clienteId===item.clienteId&&e.touroId===item.touroId&&chave(e.partida)===chave(item.partida))
+      if(indices.length){
+        const disponivel=indices.reduce((a,{e})=>a+n(e.saldo),0)
+        if(deltaDose>0 && disponivel<deltaDose){alert(`Saldo insuficiente desta partida. Disponível: ${disponivel.toLocaleString('pt-BR')} dose(s).`);return}
+        if(deltaDose>0){
+          let falta=deltaDose
+          for(const {i} of indices){
+            if(falta<=0)break
+            const atual=estoque[i], retirar=Math.min(n(atual.saldo),falta)
+            if(retirar<=0)continue
+            estoque[i]={...atual,usadas:n(atual.usadas)+retirar,saldo:Math.max(0,n(atual.saldo)-retirar)}
+            falta-=retirar
+          }
+        }else{
+          // Ao reduzir uma dose já lançada, devolve o saldo para uma das posições da mesma partida.
+          const i=indices[0].i, atual=estoque[i], devolver=Math.abs(deltaDose)
+          estoque[i]={...atual,usadas:Math.max(0,n(atual.usadas)-devolver),saldo:n(atual.saldo)+devolver}
+        }
+        const mov:MovimentacaoItem={id:id('MOV'),data:new Date().toISOString(),tipo:deltaDose>0?'SAIDA_SEMEN':'AJUSTE',clienteId:item.clienteId,touroId:item.touroId,estoqueId:indices[0].e.id,quantidade:Math.abs(deltaDose),descricao:deltaDose>0?`Uso de sêmen no serviço de ${item.data}${item.partida?' — partida '+item.partida:''}`:`Ajuste de doses do serviço de ${item.data}${item.partida?' — partida '+item.partida:''}`}
         movimentacoes=[...movimentacoes,mov]
       }
     }

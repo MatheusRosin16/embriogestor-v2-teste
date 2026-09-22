@@ -8,6 +8,7 @@ import { touroDoCliente } from '../services/tourosClientes'
 const id=(p:string)=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)
 const n=(v:any)=>Math.max(0,Number(v)||0)
 const normalizar=(v:any)=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()
+const chavePartida=(v:any)=>normalizar(v).replace(/\s+/g,'')
 const vazioEstoque:EstoqueSemenItem={id:'',clienteId:'',touroId:'',partida:'',quantidade:0,usadas:0,saldo:0,recipienteTipo:'CANECA',recipiente:'',obs:''}
 const vazioTouro:Touro={id:'',clienteId:'',clienteIds:[],nome:'',registro:'',racaId:'',central:'',codigo:'',tipoSemen:'Convencional',obs:''}
 
@@ -34,12 +35,29 @@ export function EstoqueSemen({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Ba
     if(!e.clienteId||!e.touroId)return alert('Informe cliente e touro.')
     const existente=e.id?db.estoque.find(x=>x.id===e.id):undefined
     const qtd=n(e.quantidade),usadas=n(e.usadas),saldo=Math.max(0,qtd-usadas)
-    const item={...e,id:e.id||id('SEMEST'),quantidade:qtd,usadas,saldo}
-    const estoque=e.id?db.estoque.map(x=>x.id===e.id?item:x):[...db.estoque,item]
-    const delta=existente?qtd-n(existente.quantidade):qtd
+    let estoque=[...db.estoque]
+    let item:EstoqueSemenItem
+    let delta=0
+    if(!e.id){
+      // Nova entrada na mesma combinação cliente+touro+partida soma ao estoque já existente.
+      const iguais=estoque.filter(x=>x.clienteId===e.clienteId&&x.touroId===e.touroId&&chavePartida(x.partida)===chavePartida(e.partida))
+      if(iguais.length){
+        const base=iguais[0]
+        item={...base,partida:e.partida||base.partida,quantidade:n(base.quantidade)+qtd,saldo:n(base.saldo)+qtd,recipienteTipo:e.recipienteTipo||base.recipienteTipo,recipiente:e.recipiente||base.recipiente,obs:e.obs||base.obs}
+        estoque=estoque.map(x=>x.id===base.id?item:x)
+        delta=qtd
+      }else{
+        item={...e,id:id('SEMEST'),quantidade:qtd,usadas,saldo}
+        estoque=[...estoque,item];delta=qtd
+      }
+    }else{
+      item={...e,quantidade:qtd,usadas,saldo}
+      estoque=estoque.map(x=>x.id===e.id?item:x)
+      delta=qtd-n(existente?.quantidade)
+    }
     let movimentacoes=db.movimentacoes
     if(delta!==0){
-      const mov:MovimentacaoItem={id:id('MOV'),data:new Date().toISOString(),tipo:delta>0?'ENTRADA_SEMEN':'AJUSTE',clienteId:item.clienteId,touroId:item.touroId,estoqueId:item.id,quantidade:Math.abs(delta),descricao:delta>0?'Entrada/ajuste de estoque de sêmen':'Redução/ajuste manual de estoque de sêmen'}
+      const mov:MovimentacaoItem={id:id('MOV'),data:new Date().toISOString(),tipo:delta>0?'ENTRADA_SEMEN':'AJUSTE',clienteId:item.clienteId,touroId:item.touroId,estoqueId:item.id,quantidade:Math.abs(delta),descricao:delta>0?`Entrada de sêmen${item.partida?' — partida '+item.partida:''}`:`Redução/ajuste manual de estoque de sêmen${item.partida?' — partida '+item.partida:''}`}
       movimentacoes=[...movimentacoes,mov]
     }
     onChange({...db,estoque,movimentacoes});setEditEstoque(null)
@@ -81,7 +99,16 @@ export function EstoqueSemen({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Ba
             </div>
             {g.touros.length?<div className="semen-bulls">{g.touros.map(t=>{
               const r=db.racas.find(x=>x.id===t.racaId)
-              const itens=g.estoque.filter(e=>e.touroId===t.id)
+              const itensBrutos=g.estoque.filter(e=>e.touroId===t.id)
+              // Exibição consolidada por partida, inclusive para duplicidades antigas.
+              const mapa=new Map<string,EstoqueSemenItem>()
+              for(const e of itensBrutos){
+                const k=chavePartida(e.partida)||`__sem_partida_${e.id}`
+                const atual=mapa.get(k)
+                if(!atual)mapa.set(k,{...e})
+                else mapa.set(k,{...atual,quantidade:n(atual.quantidade)+n(e.quantidade),usadas:n(atual.usadas)+n(e.usadas),saldo:n(atual.saldo)+n(e.saldo),recipiente:atual.recipiente||e.recipiente,obs:atual.obs||e.obs})
+              }
+              const itens=[...mapa.values()]
               const saldo=itens.reduce((a,e)=>a+n(e.saldo),0)
               return <div className="semen-bull" key={t.id}>
                 <div className="semen-bull-head"><div><strong>{t.nome}</strong><span>{r?.abreviatura||t.raca||'—'} • {t.tipoSemen||'Convencional'}{t.central?` • ${t.central}`:''}</span></div><div className="actions"><span className="semen-balance">{saldo.toLocaleString('pt-BR')} dose(s)</span><button className="btn small" onClick={()=>{setClienteCadastroTouro(g.cliente.id);setEditTouro({...t})}}>Editar touro</button><button className="btn small primary" onClick={()=>novaEntrada(g.cliente.id,t.id)}>+ Entrada</button></div></div>
