@@ -98,7 +98,8 @@ function errorMessage(data:any,fallback:string){
 export async function signUp(email:string,password:string,metadata?:{nome?:string;requested_role?:NivelAcesso}){
   const c=getSupabaseConfig()
   if(!c)throw new Error('Configure o Supabase primeiro.')
-  const r=await fetch(`${c.url}/auth/v1/signup`,{
+  const redirect=appReturnUrl()
+  const r=await fetch(`${c.url}/auth/v1/signup?redirect_to=${encodeURIComponent(redirect)}`,{
     method:'POST',
     headers:{'Content-Type':'application/json','apikey':c.anonKey},
     body:JSON.stringify({email,password,data:metadata||{}})
@@ -108,6 +109,7 @@ export async function signUp(email:string,password:string,metadata?:{nome?:strin
   if(data.access_token)return saveSessionFromResponse(data)
   return null
 }
+
 export async function requestPasswordReset(email:string){
   const c=getSupabaseConfig()
   if(!c)throw new Error('Supabase não configurado.')
