@@ -268,6 +268,10 @@ export async function getRemoteState(){
 }
 
 export async function pushDatabase(db:BancoEmbrioGestor,{backup=true}:{backup?:boolean}={}){
+  // Guarda a versão local correspondente exatamente ao banco que está sendo enviado.
+  // Se o usuário editar novamente enquanto a requisição estiver em andamento,
+  // o retorno deste envio antigo não poderá marcar a edição nova como sincronizada.
+  const localChangedAtAtStart=getSyncMeta(LOCAL_CHANGED_AT)
   await validSession()
   const perfil=await getMyProfile()
   if(!perfil)throw new Error('Perfil de acesso não encontrado.')
@@ -284,11 +288,17 @@ export async function pushDatabase(db:BancoEmbrioGestor,{backup=true}:{backup?:b
     const rows=await r.json();remote=rows?.[0]
   }
   const syncedAt=remote?.updated_at||new Date().toISOString()
-  setSyncMeta(CLOUD_DIRTY,'0')
+  const localChangedAtNow=getSyncMeta(LOCAL_CHANGED_AT)
+  const houveNovaEdicaoDuranteEnvio=localChangedAtNow!==localChangedAtAtStart
+  if(!houveNovaEdicaoDuranteEnvio){
+    setSyncMeta(CLOUD_DIRTY,'0')
+    removeSyncMeta(CLOUD_CONFLICT_KEY)
+  }else{
+    setSyncMeta(CLOUD_DIRTY,'1')
+  }
   setSyncMeta(LAST_SYNC_KEY,syncedAt)
   setSyncMeta(LAST_REMOTE_KEY,syncedAt)
-  removeSyncMeta(CLOUD_CONFLICT_KEY)
-  if(backup)await createDailyBackup(db).catch(()=>{})
+  if(backup&&!houveNovaEdicaoDuranteEnvio)await createDailyBackup(db).catch(()=>{})
   window.dispatchEvent(new CustomEvent('embrio-cloud-status'))
   return remote
 }
@@ -373,7 +383,9 @@ function toMs(v:string|null|undefined){const n=v?Date.parse(v):0;return Number.i
 function isMeaningfulLocalData(db:BancoEmbrioGestor){
   return !!(
     db.clientes.length||db.doadoras.length||db.touros.length||db.aspiracoes.length||
-    db.producoes.length||db.transferencias.length||db.estoque.length||db.estoqueEmbrioes.length
+    db.producoes.length||db.transferencias.length||db.estoque.length||db.estoqueEmbrioes.length||
+    db.movimentacoes.length||db.profissionais.length||db.racas.length||db.servicosSemen.length||
+    db.custosProducao.length||(db.relatoriosTransferenciaEditaveis?.length||0)>0
   )
 }
 const SYNC_SKEW_MS=5000
@@ -390,10 +402,8 @@ export async function resolveInitialSync(localDb:BancoEmbrioGestor,onRemote:(db:
     const remote=await getRemoteState()
     if(!remote?.payload)return
 
-    // Em aparelhos de Veterinário/Cliente, a entrada sempre parte da nuvem.
-    // Isto elimina conflitos antigos deixados no celular e garante que o banco
-    // exibido seja o banco do laboratório (ou a visão filtrada do cliente).
-    if(perfil.role!=='ADMIN'){
+    // Cliente é somente leitura: a nuvem é sempre a fonte de verdade.
+    if(perfil.role==='CLIENTE'){
       removeSyncMeta(CLOUD_CONFLICT_KEY)
       setSyncMeta(CLOUD_DIRTY,'0')
       const pulled=await pullDatabase()
@@ -422,19 +432,38 @@ export async function resolveInitialSync(localDb:BancoEmbrioGestor,onRemote:(db:
 }
 
 let syncTimer:number|undefined
+let autoSyncRunning=false
+let latestAutoSyncDb:BancoEmbrioGestor|null=null
+
+async function flushAutoSync(onSynced?:(when:string)=>void){
+  if(autoSyncRunning)return
+  if(!navigator.onLine||!getSupabaseConfig()||!getSession())return
+  if(getSyncMeta(CLOUD_DIRTY)!=='1')return
+  if(getSyncMeta(CLOUD_CONFLICT_KEY)==='1')return
+
+  autoSyncRunning=true
+  try{
+    while(navigator.onLine && getSyncMeta(CLOUD_DIRTY)==='1' && getSyncMeta(CLOUD_CONFLICT_KEY)!=='1'){
+      const db=latestAutoSyncDb
+      if(!db)break
+      await pushDatabase(db)
+      onSynced?.(new Date().toISOString())
+      // Se houve uma edição durante o envio, pushDatabase mantém dirty=1.
+      // O laço então envia imediatamente a versão mais recente.
+    }
+  }catch{
+    // Mantém dirty=1. Uma nova edição, reconexão, foco ou verificação periódica tentará novamente.
+  }finally{
+    autoSyncRunning=false
+  }
+}
+
 export function scheduleAutoSync(db:BancoEmbrioGestor,onSynced?:(when:string)=>void){
+  latestAutoSyncDb=db
   if(syncTimer)window.clearTimeout(syncTimer)
   if(!navigator.onLine||!getSupabaseConfig()||!getSession())return
   if(getSyncMeta(CLOUD_DIRTY)!=='1')return
-  syncTimer=window.setTimeout(async()=>{
-    try{
-      if(getSyncMeta(CLOUD_CONFLICT_KEY)==='1')return
-      await pushDatabase(db)
-      onSynced?.(new Date().toISOString())
-    }catch{
-      // permanece dirty e tentará novamente quando houver nova alteração/reconexão.
-    }
-  },1200)
+  syncTimer=window.setTimeout(()=>{void flushAutoSync(onSynced)},1200)
 }
 
 export async function forceUseLocal(db:BancoEmbrioGestor){
@@ -486,11 +515,20 @@ export async function checkForRemoteUpdates(
     const remoteTime=toMs(remote.updated_at)
     const localChanged=toMs(getSyncMeta(LOCAL_CHANGED_AT))
     if(dirty){
+      // Um evento Realtime pode chegar enquanto o próprio aparelho ainda está
+      // concluindo um envio anterior. Isso não é conflito entre dispositivos.
+      if(autoSyncRunning){
+        scheduleAutoSync(localDb)
+        return {changed:false}
+      }
       if(hasRealConcurrentChange(dirty,lastSync,remoteTime,localChanged)){
         setSyncMeta(CLOUD_CONFLICT_KEY,'1')
         window.dispatchEvent(new CustomEvent('embrio-cloud-status'))
         return {changed:false,conflict:true}
       }
+      // Não fica esperando uma nova edição para tentar de novo. Isso é essencial
+      // após reconexão, troca de aba ou falha temporária de rede.
+      scheduleAutoSync(localDb)
       return {changed:false}
     }
     if(remoteTime>lastSync){
@@ -562,7 +600,7 @@ export async function syncNowSafely(localDb:BancoEmbrioGestor,onRemote:(db:Banco
   }
 
   const st=cloudStatus()
-  if(perfil.role==='VETERINARIO' && st.conflict){
+  if(perfil.role==='VETERINARIO' && st.conflict && !st.dirty){
     // No botão manual do celular, a intenção é recuperar o banco mestre.
     // Descarta somente a cópia local conflitante deste login; não toca no banco remoto.
     removeSyncMeta(CLOUD_CONFLICT_KEY);setSyncMeta(CLOUD_DIRTY,'0')
