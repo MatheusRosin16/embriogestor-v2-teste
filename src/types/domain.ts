@@ -14,6 +14,7 @@ export interface PerfilAcesso {
 }
 
 export type Status = 'Ativo' | 'Inativo'
+
 export type TipoSemen = 'Convencional' | 'Sexado macho' | 'Sexado fêmea'
 
 export interface Cliente {
@@ -95,7 +96,6 @@ export interface Producao {
   obs?: string
 }
 
-
 export interface EstoqueSemenItem {
   id: string
   clienteId: string
@@ -131,7 +131,12 @@ export interface EstoqueEmbriaoItem {
 export interface MovimentacaoItem {
   id: string
   data: string
-  tipo: 'ENTRADA_SEMEN' | 'SAIDA_SEMEN' | 'ENTRADA_EMBRIAO' | 'SAIDA_EMBRIAO' | 'AJUSTE'
+  tipo:
+    | 'ENTRADA_SEMEN'
+    | 'SAIDA_SEMEN'
+    | 'ENTRADA_EMBRIAO'
+    | 'SAIDA_EMBRIAO'
+    | 'AJUSTE'
   clienteId?: string
   touroId?: string
   doadoraId?: string
@@ -201,7 +206,6 @@ export interface CustoProducao {
   clienteId?: string
   obs?: string
 }
-
 
 export interface LinhaRelatorioTransferenciaEditavel {
   id: string

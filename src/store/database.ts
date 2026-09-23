@@ -104,7 +104,7 @@ export function normalizar(data:any):BancoEmbrioGestor{
   const listas=[
     'clientes','fazendas','doadoras','touros','profissionais','usuarios','estoque',
     'movimentacoes','estoqueEmbrioes','aspiracoes','producoes','transferencias',
-    'congelamentos','servicosSemen','custosProducao'
+    'congelamentos','servicosSemen','custosProducao','relatoriosTransferenciaEditaveis'
   ]
   for(const k of listas){
     if(Array.isArray(data?.[k])) (base as any)[k]=data[k]
