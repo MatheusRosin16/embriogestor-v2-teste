@@ -1,5 +1,5 @@
 import { queueLocalChange } from '../services/offlineQueue'
-import type { BancoEmbrioGestor, Raca } from '../types/domain'
+import type { BancoEmbrioGestor, Raca, MaterialLaboratorio } from '../types/domain'
 
 const KEY='embriogestor2_novo'
 let ACTIVE_KEY=KEY
@@ -59,12 +59,62 @@ const RACAS_PADRAO: Raca[] = [
   {id:'RAC_GIROLANDO',nome:'Girolando',abreviatura:'GL'}
 ]
 
+export const MATERIAIS_LAB_PADRAO:MaterialLaboratorio[] = [
+  {id:'MAT_A',nome:'Stock A',categoria:'MIV',unidade:'un.',precoReferencia:0.77,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_B',nome:'Stock B',categoria:'MIV',unidade:'un.',precoReferencia:4.37,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_C',nome:'Stock C',categoria:'MIV',unidade:'un.',precoReferencia:7.95,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_D',nome:'Stock D',categoria:'MIV',unidade:'un.',precoReferencia:4.63,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_E',nome:'Stock E',categoria:'MIV',unidade:'un.',precoReferencia:13.58,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_F',nome:'Stock F',categoria:'MIV',unidade:'un.',precoReferencia:0.79,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_J',nome:'Stock J',categoria:'MIV',unidade:'un.',precoReferencia:0.94,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_ANT',nome:'Solução Antibióticos',categoria:'Avulsos',unidade:'mL',precoReferencia:19.64,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_SFB',nome:'Soro Fetal Bovino (SFB)',categoria:'Avulsos',unidade:'mL',precoReferencia:4.13,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_TCM',nome:'TCM 199 Hepes',categoria:'MIV',unidade:'mL',precoReferencia:0.98,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_MIV',nome:'MIV pronto',categoria:'MIV',unidade:'mL',precoReferencia:34.42,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_H199SFB',nome:'H199 + SFB (Lavagem)',categoria:'MIV',unidade:'mL',precoReferencia:2.16,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_G',nome:'Stock G',categoria:'FIV',unidade:'un.',precoReferencia:2.17,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_H',nome:'Stock H',categoria:'FIV',unidade:'un.',precoReferencia:1.70,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_10X',nome:'Solução 10X',categoria:'FIV',unidade:'mL',precoReferencia:1.55,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_H199BSA',nome:'H199 + BSA Semipronto',categoria:'FIV',unidade:'mL',precoReferencia:7.14,tipo:'Semipronto',ativo:true},
+  {id:'MAT_PERCOLL',nome:'Percoll',categoria:'FIV',unidade:'mL',precoReferencia:9.91,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_TL',nome:'TL-Stock + BSA',categoria:'FIV',unidade:'mL',precoReferencia:9.56,tipo:'Semipronto',ativo:true},
+  {id:'MAT_FIV',nome:'FIV pronto',categoria:'FIV',unidade:'mL',precoReferencia:10.32,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_FIVLAV',nome:'FIV Hepes (Lavagem)',categoria:'FIV',unidade:'mL',precoReferencia:7.91,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_P90',nome:'Percoll 90%',categoria:'FIV',unidade:'mL',precoReferencia:11.47,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_CIVSEMI',nome:'Cultivo Stock + BSA',categoria:'CIV',unidade:'mL',precoReferencia:8.20,tipo:'Semipronto',ativo:true},
+  {id:'MAT_CIV',nome:'CIV pronto',categoria:'CIV',unidade:'mL',precoReferencia:8.50,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_HSOFSEMI',nome:'H-SOF Semipronto',categoria:'TE',unidade:'mL',precoReferencia:10.09,tipo:'Semipronto',ativo:true},
+  {id:'MAT_HSOF',nome:'H-SOF pronto',categoria:'TE',unidade:'mL',precoReferencia:11.43,tipo:'Meio preparado',ativo:true},
+  {id:'MAT_MLAV',nome:'M LAV Semipronto',categoria:'DT',unidade:'mL',precoReferencia:8.16,tipo:'Semipronto',ativo:true},
+  {id:'MAT_MC',nome:'MC',categoria:'DT',unidade:'mL',precoReferencia:7.82,tipo:'Semipronto',ativo:true},
+  {id:'MAT_MCB1',nome:'MCB1',categoria:'DT',unidade:'mL',precoReferencia:7.65,tipo:'Semipronto',ativo:true},
+  {id:'MAT_MCB2',nome:'MCB2',categoria:'DT',unidade:'mL',precoReferencia:7.73,tipo:'Semipronto',ativo:true},
+  {id:'MAT_MPP',nome:'MPP',categoria:'DT',unidade:'mL',precoReferencia:7.64,tipo:'Semipronto',ativo:true},
+  {id:'MAT_BASEVT',nome:'Base VT Semipronto',categoria:'VT',unidade:'mL',precoReferencia:7.51,tipo:'Semipronto',ativo:true},
+  {id:'MAT_DMSO',nome:'DMSO',categoria:'VT',unidade:'mL',precoReferencia:47.11,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_LL',nome:'0,5 LL Semipronto',categoria:'VT',unidade:'mL',precoReferencia:8.19,tipo:'Semipronto',ativo:true},
+  {id:'MAT_MM',nome:'MM',categoria:'VT',unidade:'mL',precoReferencia:4.59,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_AQ1',nome:'AQ1 Semipronto',categoria:'Aquecimento',unidade:'mL',precoReferencia:6.75,tipo:'Semipronto',ativo:true},
+  {id:'MAT_AQ2',nome:'AQ2 Semipronto',categoria:'Aquecimento',unidade:'mL',precoReferencia:7.43,tipo:'Semipronto',ativo:true},
+  {id:'MAT_AQ3',nome:'AQ3 Semipronto',categoria:'Aquecimento',unidade:'mL',precoReferencia:8.16,tipo:'Semipronto',ativo:true},
+  {id:'MAT_OLEO_IRVINE',nome:'Óleo Mineral Irvine',categoria:'Avulsos',unidade:'mL',precoReferencia:3.77,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_OLEO_SIGMA',nome:'Óleo Mineral Sigma',categoria:'Avulsos',unidade:'mL',precoReferencia:1.29,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_BSA',nome:'BSA',categoria:'Avulsos',unidade:'g',precoReferencia:106.35,tipo:'Matéria-prima',ativo:true},
+  {id:'MAT_TUBO15',nome:'Tubo 1,5 mL',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_TUBO5',nome:'Tubo 5 mL',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_TUBO15ML',nome:'Tubo 15 mL',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_TUBO50',nome:'Tubo 50 mL',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_PLACA_FIV',nome:'Placa FIV',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_PLACA_CIV',nome:'Placa CIV',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+  {id:'MAT_PLACA90',nome:'Placa 90 mm',categoria:'Descartáveis',unidade:'un.',tipo:'Descartável',ativo:true},
+]
+
 export function bancoVazio():BancoEmbrioGestor{
   return {
     versao:2,clientes:[],fazendas:[],doadoras:[],touros:[],
     racas:[...RACAS_PADRAO],profissionais:[],usuarios:[],estoque:[],
     movimentacoes:[],estoqueEmbrioes:[],aspiracoes:[],producoes:[],
-    transferencias:[],congelamentos:[],servicosSemen:[],custosProducao:[],relatoriosTransferenciaEditaveis:[],
+    transferencias:[],congelamentos:[],servicosSemen:[],custosProducao:[],materiaisLaboratorio:MATERIAIS_LAB_PADRAO.map(x=>({...x})),notasFiscais:[],consumosInsumos:[],relatoriosTransferenciaEditaveis:[],
     identidadeEmpresa:{nome:'SÊMINNA – Laboratório de Reprodução Animal',nomeFantasia:'SÊMINNA',endereco:'AV. General Osório, 797, sala 01, Francisco Beltrão - PR'}
   }
 }
@@ -104,11 +154,14 @@ export function normalizar(data:any):BancoEmbrioGestor{
   const listas=[
     'clientes','fazendas','doadoras','touros','profissionais','usuarios','estoque',
     'movimentacoes','estoqueEmbrioes','aspiracoes','producoes','transferencias',
-    'congelamentos','servicosSemen','custosProducao','relatoriosTransferenciaEditaveis'
+    'congelamentos','servicosSemen','custosProducao','materiaisLaboratorio','notasFiscais','consumosInsumos','relatoriosTransferenciaEditaveis'
   ]
   for(const k of listas){
     if(Array.isArray(data?.[k])) (base as any)[k]=data[k]
   }
+  const materiaisExistentes=new Map((base.materiaisLaboratorio||[]).map(m=>[m.id,m]))
+  for(const m of MATERIAIS_LAB_PADRAO) if(!materiaisExistentes.has(m.id)) materiaisExistentes.set(m.id,{...m})
+  base.materiaisLaboratorio=[...materiaisExistentes.values()]
   base.racas=migrarRacas(data)
   if(data?.identidadeEmpresa&&typeof data.identidadeEmpresa==='object'){
     base.identidadeEmpresa={...base.identidadeEmpresa,...data.identidadeEmpresa}

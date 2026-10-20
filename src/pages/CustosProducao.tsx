@@ -1,188 +1,124 @@
-import { useMemo, useState } from 'react'
-import type { BancoEmbrioGestor, CustoProducao } from '../types/domain'
+import { useEffect, useMemo, useState } from 'react'
+import type { BancoEmbrioGestor, CustoProducao, NotaFiscalCompra, ItemNotaFiscal, ConsumoInsumo, Producao, MaterialLaboratorio } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
 import { handleEnterFlow } from '../components/EnterFlow'
 
-const categorias:CustoProducao['categoria'][]=[
-  'Meios de cultivo/laboratório','Material descartável','Mão de obra','Transporte',
-  'Manutenção','Nitrogênio','Energia','Água','Outros'
-]
+const categorias:CustoProducao['categoria'][]=['Meios de cultivo/laboratório','Material descartável','Mão de obra','Transporte','Manutenção','Nitrogênio','Energia','Água','Outros']
 const tipos:Array<NonNullable<CustoProducao['tipo']>>=['Fixo','Variável','Depreciação']
-const id=()=> 'CUSTO_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)
-const hojeMes=()=>new Date().toISOString().slice(0,7)
-const n=(v:any)=>Math.max(0,Number(v)||0)
+const uid=(p:string)=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)
+const hoje=()=>new Date().toISOString().slice(0,10)
+const hojeMes=()=>hoje().slice(0,7)
+const n=(v:any)=>Math.max(0,Number(String(v??'').replace(',','.'))||0)
 const moeda=(v:number)=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
-const pct=(v:number)=>v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%'
-const vazio:CustoProducao={
-  id:'',competencia:hojeMes(),categoria:'Meios de cultivo/laboratório',
-  descricao:'',valor:0,tipo:'Variável',clienteId:'',obs:''
+const fmt=(v:number)=>v.toLocaleString('pt-BR',{maximumFractionDigits:3})
+const vazio:CustoProducao={id:'',competencia:hojeMes(),categoria:'Meios de cultivo/laboratório',descricao:'',valor:0,tipo:'Variável',clienteId:'',obs:''}
+const itemVazio=():ItemNotaFiscal=>({id:uid('ITEM'),produto:'',unidade:'un.',quantidade:0,valorUnitario:0,valorTotal:0})
+const notaVazia=():NotaFiscalCompra=>({id:'',data:hoje(),numero:'',fornecedor:'',itens:[itemVazio()],obs:''})
+type ConsumoEdit={data:string,notaFiscalId:string,itemId:string,clienteId:string,producaoId?:string,rascunhoId?:string,quantidade:any,obs:string}
+type Aba='resumo'|'materiais'|'compras'|'producoes'|'mensais'
+type Sugestao={produto:string,quantidade:number,unidade:string,etapa:string}
+const categoriasMateriais:MaterialLaboratorio['categoria'][]=['MIV','FIV','CIV','TE','DT','VT','Aquecimento','Avulsos','Descartáveis','Outros']
+const materialVazio=():MaterialLaboratorio=>({id:'',nome:'',categoria:'Outros',unidade:'un.',precoReferencia:0,estoqueMinimo:0,tipo:'Matéria-prima',ativo:true})
+
+function sugestoesMeios(linhas:Producao[]):Sugestao[]{
+  const porDoadora=new Map<string,number>()
+  for(const p of linhas) porDoadora.set(p.doadoraId,(porDoadora.get(p.doadoraId)||0)+n(p.oocitosViaveis||p.oocitos))
+  const tubos=[...porDoadora.values()].reduce((s,q)=>s+Math.max(1,Math.ceil(q/25)),0)
+  const doadoras=porDoadora.size
+  const gotas=tubos
+  const touros=new Set(linhas.map(p=>p.touroId).filter(Boolean)).size
+  const placasFiv=gotas?Math.ceil(gotas/7):0, placasCiv=gotas?Math.ceil(gotas/7):0
+  return [
+    {etapa:'Maturação',produto:'MIV pronto',quantidade:tubos*.4,unidade:'mL'},
+    {etapa:'Maturação',produto:'H199 + SFB (Lavagem)',quantidade:doadoras*.6,unidade:'mL'},
+    {etapa:'Fertilização',produto:'FIV pronto',quantidade:(gotas*.240)+(touros*1.1),unidade:'mL'},
+    {etapa:'Fertilização',produto:'Placa FIV',quantidade:placasFiv,unidade:'un.'},
+    {etapa:'Fertilização',produto:'Óleo Mineral Irvine',quantidade:placasFiv*3.5,unidade:'mL'},
+    {etapa:'Cultivo',produto:'CIV pronto',quantidade:gotas*.2,unidade:'mL'},
+    {etapa:'Cultivo',produto:'Placa CIV',quantidade:placasCiv,unidade:'un.'},
+    {etapa:'Cultivo',produto:'Óleo Mineral Irvine',quantidade:placasCiv*4,unidade:'mL'},
+  ].filter(x=>x.quantidade>0)
 }
 
 export function CustosProducao({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:BancoEmbrioGestor)=>void}){
-  const[competencia,setCompetencia]=useState(hojeMes())
-  const[busca,setBusca]=useState('')
-  const[edit,setEdit]=useState<CustoProducao|null>(null)
-  const[precoEmb,setPrecoEmb]=useState<number>(0)
-  const[custoTe,setCustoTe]=useState<number>(0)
-
+  const[competencia,setCompetencia]=useState(hojeMes()),[aba,setAba]=useState<Aba>('resumo'),[busca,setBusca]=useState('')
+  const[edit,setEdit]=useState<CustoProducao|null>(null),[notaEdit,setNotaEdit]=useState<NotaFiscalCompra|null>(null),[consumoEdit,setConsumoEdit]=useState<ConsumoEdit|null>(null)
+  const[materialEdit,setMaterialEdit]=useState<MaterialLaboratorio|null>(null),[categoriaMaterial,setCategoriaMaterial]=useState<string>('Todos'),[buscaMaterial,setBuscaMaterial]=useState('')
+  const[producaoCalc,setProducaoCalc]=useState('')
+  const notas=db.notasFiscais||[], consumos=db.consumosInsumos||[]
   const custosMes=useMemo(()=>db.custosProducao.filter(c=>c.competencia===competencia),[db,competencia])
-  const custos=useMemo(()=>custosMes.filter(c=>{
-    const cli=db.clientes.find(x=>x.id===c.clienteId)?.nome||''
-    const q=busca.toLowerCase()
-    return !q||String(c.categoria+' '+c.tipo+' '+c.descricao+' '+c.obs+' '+cli).toLowerCase().includes(q)
-  }).sort((a,b)=>(a.tipo||'Variável').localeCompare(b.tipo||'Variável','pt-BR')||a.categoria.localeCompare(b.categoria,'pt-BR')),[custosMes,busca,db])
-
+  const consumosMes=useMemo(()=>consumos.filter(c=>String(c.data).startsWith(competencia)),[consumos,competencia])
   const producoesMes=useMemo(()=>db.producoes.filter(p=>p.data.startsWith(competencia)),[db,competencia])
   const aspiracoesMes=useMemo(()=>db.aspiracoes.filter(a=>a.data.startsWith(competencia)),[db,competencia])
-  const transferenciasMes=useMemo(()=>db.transferencias.filter(t=>t.data.startsWith(competencia)),[db,competencia])
+  const itemPorId=(notaId:string,itemId:string)=>notas.find(x=>x.id===notaId)?.itens.find(x=>x.id===itemId)
+  const custoConsumo=(c:ConsumoInsumo)=>c.status==='Rascunho'?0:n(c.quantidade)*n(itemPorId(c.notaFiscalId,c.itemId)?.valorUnitario)
+  const totalInsumosMes=consumosMes.reduce((s,c)=>s+custoConsumo(c),0), custoMensal=custosMes.reduce((s,c)=>s+n(c.valor),0), custoTotal=custoMensal+totalInsumosMes
+  const d7=producoesMes.reduce((s,p)=>s+n(p.embriõesD7),0), oocitos=producoesMes.reduce((s,p)=>s+n(p.oocitosViaveis),0)
+  const opuKeys=new Set(aspiracoesMes.map(a=>a.clienteId+'|'+a.data)), opu=opuKeys.size
+  const producaoSelecionada=db.producoes.find(p=>p.id===producaoCalc)
+  const chaveProd=(p:Producao)=>p.clienteId+'|'+p.data
+  const doadorasProd=producaoSelecionada?new Set(db.producoes.filter(p=>chaveProd(p)===chaveProd(producaoSelecionada)).map(p=>p.doadoraId)).size:0
+  const tourosProd=producaoSelecionada?new Set(db.producoes.filter(p=>chaveProd(p)===chaveProd(producaoSelecionada)).map(p=>p.touroId).filter(Boolean)).size:0
+  const linhasProducao=producaoSelecionada?db.producoes.filter(p=>chaveProd(p)===chaveProd(producaoSelecionada)):[]
+  const sugestoes=useMemo(()=>sugestoesMeios(linhasProducao),[producaoSelecionada,db.producoes])
+  const materiais=(db.materiaisLaboratorio||[]).filter(m=>m.ativo!==false)
+  const saldoProduto=(nome:string)=>notas.flatMap(nf=>nf.itens).filter(i=>i.produto===nome).reduce((s,i)=>s+n(i.quantidade)-consumos.filter(c=>c.status!=='Rascunho'&&c.itemId===i.id).reduce((a,c)=>a+n(c.quantidade),0),0)
+  const materiaisBaixos=materiais.filter(m=>n(m.estoqueMinimo)>0&&saldoProduto(m.nome)<=n(m.estoqueMinimo))
+  const materiaisFiltrados=materiais.filter(m=>(categoriaMaterial==='Todos'||m.categoria===categoriaMaterial)&&(!buscaMaterial||(`${m.nome} ${m.categoria} ${m.tipo||''}`).toLowerCase().includes(buscaMaterial.toLowerCase())))
+  const custos=useMemo(()=>custosMes.filter(c=>{const cli=db.clientes.find(x=>x.id===c.clienteId)?.nome||'';const q=busca.toLowerCase();return !q||String(c.categoria+' '+c.tipo+' '+c.descricao+' '+c.obs+' '+cli).toLowerCase().includes(q)}),[custosMes,busca,db])
+  const porCliente=useMemo(()=>db.clientes.map(cli=>{const ps=producoesMes.filter(p=>p.clienteId===cli.id),ci=consumosMes.filter(c=>c.clienteId===cli.id).reduce((s,c)=>s+custoConsumo(c),0),cd=custosMes.filter(c=>c.clienteId===cli.id).reduce((s,c)=>s+n(c.valor),0),emb=ps.reduce((s,p)=>s+n(p.embriõesD7),0);return{id:cli.id,nome:cli.nome,d7:emb,insumos:ci,diretos:cd,total:ci+cd}}).filter(x=>x.d7||x.total).sort((a,b)=>b.total-a.total),[db,producoesMes,custosMes,consumosMes,notas])
 
-  const indicadores=useMemo(()=>{
-    const custoTotal=custosMes.reduce((s,c)=>s+n(c.valor),0)
-    const fixos=custosMes.filter(c=>(c.tipo||'Variável')==='Fixo').reduce((s,c)=>s+n(c.valor),0)
-    const variaveis=custosMes.filter(c=>(c.tipo||'Variável')==='Variável').reduce((s,c)=>s+n(c.valor),0)
-    const depreciacao=custosMes.filter(c=>c.tipo==='Depreciação').reduce((s,c)=>s+n(c.valor),0)
-    const oocitosViaveis=producoesMes.reduce((s,p)=>s+n(p.oocitosViaveis),0)
-    const d7=producoesMes.reduce((s,p)=>s+n(p.embriõesD7),0)
-    const fresco=producoesMes.reduce((s,p)=>s+n(p.transferidosFresco),0)
-    const dt=producoesMes.reduce((s,p)=>s+n(p.congeladosDT),0)
-    const vt=producoesMes.reduce((s,p)=>s+n(p.congeladosVT),0)
-    const destinados=fresco+dt+vt
-    const dg=transferenciasMes.filter(t=>t.diagnostico&&t.diagnostico!=='Pendente')
-    const prenhes=dg.filter(t=>String(t.diagnostico).toLowerCase()==='positiva').length
-    const custoComTE=custoTotal+n(custoTe)
-    const margemUnitaria=precoEmb>0&&d7>0?precoEmb-(custoTotal/d7):0
-    const margemTotal=precoEmb>0?precoEmb*destinados-custoTotal:0
-    const custoVariavelUnit=d7?variaveis/d7:0
-    const margemContrib=precoEmb-custoVariavelUnit
-    const pontoEquilibrio=precoEmb>0&&margemContrib>0?Math.ceil((fixos+depreciacao)/margemContrib):0
-    return {
-      custoTotal,fixos,variaveis,depreciacao,oocitosViaveis,d7,fresco,dt,vt,destinados,prenhes,
-      opus:aspiracoesMes.length,
-      custoOocito:oocitosViaveis?custoTotal/oocitosViaveis:0,
-      custoD7:d7?custoTotal/d7:0,
-      custoDestinado:destinados?custoTotal/destinados:0,
-      custoOPU:aspiracoesMes.length?custoTotal/aspiracoesMes.length:0,
-      custoPrenhez:prenhes?custoComTE/prenhes:0,
-      margemUnitaria,margemTotal,pontoEquilibrio,
-      taxaProducao:oocitosViaveis?d7/oocitosViaveis*100:0
+  useEffect(()=>{
+    const grupos=[...new Map(db.producoes.map(p=>[chaveProd(p),p])).entries()]
+    const novos:ConsumoInsumo[]=[]
+    for(const [chave,base] of grupos){
+      if(consumos.some(c=>c.chaveProducao===chave)) continue
+      const linhas=db.producoes.filter(p=>chaveProd(p)===chave)
+      for(const sg of sugestoesMeios(linhas)) novos.push({id:uid('CONS_AUTO'),data:base.data,notaFiscalId:'',itemId:'',clienteId:base.clienteId,producaoId:base.id,origem:'Produção',produto:sg.produto,unidade:sg.unidade,status:'Rascunho',quantidade:sg.quantidade,quantidadeCalculada:sg.quantidade,chaveProducao:chave,obs:`${sg.etapa} — cálculo automático`})
     }
-  },[custosMes,producoesMes,aspiracoesMes,transferenciasMes,precoEmb,custoTe])
+    if(novos.length) onChange({...db,consumosInsumos:[...consumos,...novos]})
+  },[db.producoes])
 
-  const porCategoria=useMemo(()=>categorias.map(categoria=>({
-    categoria,valor:custosMes.filter(c=>c.categoria===categoria).reduce((s,c)=>s+n(c.valor),0)
-  })),[custosMes])
-
-  const porCliente=useMemo(()=>{
-    const totalProd=producoesMes.reduce((s,p)=>s+n(p.embriõesD7),0)
-    return db.clientes.map(cli=>{
-      const ps=producoesMes.filter(p=>p.clienteId===cli.id)
-      const d7=ps.reduce((s,p)=>s+n(p.embriõesD7),0)
-      const diretos=custosMes.filter(c=>c.clienteId===cli.id).reduce((s,c)=>s+n(c.valor),0)
-      const compartilhados=custosMes.filter(c=>!c.clienteId).reduce((s,c)=>s+n(c.valor),0)
-      const rateio=totalProd?compartilhados*(d7/totalProd):0
-      const custo=diretos+rateio
-      return {id:cli.id,nome:cli.nome,d7,diretos,rateio,custo,custoD7:d7?custo/d7:0}
-    }).filter(x=>x.d7||x.diretos)
-      .sort((a,b)=>b.custo-a.custo)
-  },[db,custosMes,producoesMes])
-
-  function salvar(c:CustoProducao){
-    if(!c.competencia)return alert('Informe a competência.')
-    if(n(c.valor)<=0)return alert('Informe um valor maior que zero.')
-    const item={...c,id:c.id||id(),valor:n(c.valor),tipo:c.tipo||'Variável'}
-    onChange({...db,custosProducao:c.id?db.custosProducao.map(x=>x.id===c.id?item:x):[...db.custosProducao,item]})
-    setEdit(null)
+  function excluirNota(id:string){
+    const nota=notas.find(x=>x.id===id); if(!nota)return
+    const ids=new Set(nota.itens.map(i=>i.id)), afetados=consumos.filter(c=>ids.has(c.itemId))
+    const msg=afetados.length?`Esta nota possui ${afetados.length} consumo(s) vinculado(s). Excluir a nota também removerá esses lançamentos e recalculará o estoque. Continuar?`:'Excluir esta nota fiscal e seus itens do estoque?'
+    if(!confirm(msg))return
+    onChange({...db,notasFiscais:notas.filter(x=>x.id!==id),consumosInsumos:consumos.filter(c=>!ids.has(c.itemId))})
   }
+  function confirmarRascunho(c:ConsumoInsumo){setConsumoEdit({data:c.data,notaFiscalId:'',itemId:'',clienteId:c.clienteId,producaoId:c.producaoId,rascunhoId:c.id,quantidade:String(c.quantidade).replace('.',','),obs:c.obs||''});}
+  function atualizarRascunho(id:string,q:any){onChange({...db,consumosInsumos:consumos.map(c=>c.id===id?{...c,quantidade:n(q)}:c)})}
 
-  return <section>
-    <div className="page-title-block">
-      <h2>Gestão Econômica da PIVE</h2>
-      <p>Custos fixos, variáveis e depreciação com indicadores por etapa da produção.</p>
-    </div>
-    <div className="panel">
-      <div className="panel-head">
-        <div><h3>Competência mensal</h3><p>O custo por D7 mede a produção laboratorial; o custo por destinado mede o embrião efetivamente fresco/DT/VT.</p></div>
-        <button className="btn primary" onClick={()=>setEdit({...vazio,competencia})}>Novo custo</button>
-      </div>
+  function salvar(c:CustoProducao){if(!c.competencia)return alert('Informe a competência.');if(n(c.valor)<=0)return alert('Informe um valor maior que zero.');const item={...c,id:c.id||uid('CUSTO'),valor:n(c.valor),tipo:c.tipo||'Variável'};onChange({...db,custosProducao:c.id?db.custosProducao.map(x=>x.id===c.id?item:x):[...db.custosProducao,item]});setEdit(null)}
+  function salvarNota(nota:NotaFiscalCompra){const itens=nota.itens.filter(i=>i.produto.trim()&&n(i.quantidade)>0).map(i=>({...i,quantidade:n(i.quantidade),valorUnitario:n(i.valorUnitario),valorTotal:n(i.quantidade)*n(i.valorUnitario)}));if(!nota.data||!itens.length)return alert('Informe a data e pelo menos um produto.');const item={...nota,id:nota.id||uid('NF'),itens};onChange({...db,notasFiscais:nota.id?notas.map(x=>x.id===nota.id?item:x):[...notas,item]});setNotaEdit(null)}
+  function salvarConsumo(c:ConsumoEdit){if(!c.itemId||!c.clienteId||n(c.quantidade)<=0)return alert('Informe produto, propriedade e quantidade.');const item=itemPorId(c.notaFiscalId,c.itemId);if(!item)return;const ja=consumos.filter(x=>x.itemId===c.itemId).reduce((s,x)=>s+n(x.quantidade),0);if(ja+n(c.quantidade)>n(item.quantidade))return alert(`Saldo insuficiente. Disponível: ${fmt(n(item.quantidade)-ja)} ${item.unidade}.`);const novo:ConsumoInsumo={id:uid('CONS'),data:c.data,notaFiscalId:c.notaFiscalId,itemId:c.itemId,clienteId:c.clienteId,producaoId:c.producaoId,origem:c.producaoId?'Produção':'Manual',quantidade:n(c.quantidade),obs:c.obs};onChange({...db,consumosInsumos:c.rascunhoId?[...consumos.filter(x=>x.id!==c.rascunhoId),{...novo,status:'Confirmado'}]:[...consumos,{...novo,status:'Confirmado'}]});setConsumoEdit(null)}
+  async function anexarArquivo(file?:File){if(!file||!notaEdit)return;if(file.size>5*1024*1024)return alert('Use PDF ou imagem de até 5 MB.');const r=new FileReader();r.onload=()=>setNotaEdit(x=>x?{...x,arquivoNome:file.name,arquivoDataUrl:String(r.result||'')}:x);r.readAsDataURL(file)}
+  function abrirConsumoSugestao(s:Sugestao){if(!producaoSelecionada)return;setConsumoEdit({data:producaoSelecionada.data,notaFiscalId:'',itemId:'',clienteId:producaoSelecionada.clienteId,producaoId:producaoSelecionada.id,quantidade:String(Number(s.quantidade.toFixed(3))).replace('.',','),obs:`${s.etapa} — sugestão da planilha de meios: ${s.produto}`})}
+  function salvarMaterial(m:MaterialLaboratorio){if(!m.nome.trim())return alert('Informe o nome do material.');const item={...m,id:m.id||uid('MAT'),precoReferencia:n(m.precoReferencia),ativo:m.ativo!==false};onChange({...db,materiaisLaboratorio:m.id?(db.materiaisLaboratorio||[]).map(x=>x.id===m.id?item:x):[...(db.materiaisLaboratorio||[]),item]});setMaterialEdit(null)}
+  function selecionarMaterialNota(itemId:string,materialId:string){const m=materiais.find(x=>x.id===materialId);if(!notaEdit||!m)return;setNotaEdit({...notaEdit,itens:notaEdit.itens.map(x=>x.id===itemId?{...x,produto:m.nome,unidade:m.unidade,valorUnitario:x.valorUnitario||m.precoReferencia||0}:x)})}
+  async function importarXml(file?:File){if(!file||!notaEdit)return;try{const xml=await file.text(),doc=new DOMParser().parseFromString(xml,'application/xml');const get=(el:Element|null,tag:string)=>el?.getElementsByTagName(tag)[0]?.textContent?.trim()||'';const ide=doc.getElementsByTagName('ide')[0],emit=doc.getElementsByTagName('emit')[0];const dets=[...doc.getElementsByTagName('det')];const itens=dets.map(det=>{const prod=det.getElementsByTagName('prod')[0],nome=get(prod,'xProd'),q=n(get(prod,'qCom')),vu=n(get(prod,'vUnCom')),u=get(prod,'uCom')||'un.';const match=materiais.find(m=>m.nome.toLowerCase()===nome.toLowerCase())||materiais.find(m=>nome.toLowerCase().includes(m.nome.toLowerCase())||m.nome.toLowerCase().includes(nome.toLowerCase()));return {id:uid('ITEM'),produto:match?.nome||nome,unidade:match?.unidade||u,quantidade:q,valorUnitario:vu,valorTotal:q*vu}}).filter(i=>i.produto);setNotaEdit({...notaEdit,data:(get(ide,'dhEmi')||get(ide,'dEmi')||notaEdit.data).slice(0,10),numero:get(ide,'nNF')||notaEdit.numero,fornecedor:get(emit,'xNome')||notaEdit.fornecedor,itens:itens.length?itens:notaEdit.itens,arquivoNome:file.name});if(!itens.length)alert('O XML foi lido, mas não encontrei produtos. Você pode selecioná-los manualmente no catálogo.')}catch{alert('Não foi possível ler este XML.')} }
 
-      <div className="economic-controls">
-        <label><span>Mês</span><input type="month" value={competencia} onChange={e=>setCompetencia(e.target.value)}/></label>
-        <label><span>Preço médio cobrado/embrião (opcional)</span><input type="number" min="0" step="0.01" value={precoEmb||''} onChange={e=>setPrecoEmb(n(e.target.value))}/></label>
-        <label><span>Custos adicionais TE/receptoras no mês</span><input type="number" min="0" step="0.01" value={custoTe||''} onChange={e=>setCustoTe(n(e.target.value))}/></label>
-        <SearchBar value={busca} onChange={setBusca} placeholder="Pesquisar custos"/>
-      </div>
+  return <section><div className="page-title-block"><h2>Gestão Econômica da PIVE</h2><p>Gastos mensais do laboratório + compras/estoque + consumo técnico por produção e propriedade.</p></div><div className="panel">
+    <div className="economic-controls"><label><span>Competência</span><input type="month" value={competencia} onChange={e=>setCompetencia(e.target.value)}/></label><SearchBar value={busca} onChange={setBusca} placeholder="Pesquisar custos"/></div>
+    <div className="economic-tabs"><button className={'btn '+(aba==='resumo'?'primary':'')} onClick={()=>setAba('resumo')}>Resumo</button><button className={'btn '+(aba==='materiais'?'primary':'')} onClick={()=>setAba('materiais')}>Materiais e meios</button><button className={'btn '+(aba==='compras'?'primary':'')} onClick={()=>setAba('compras')}>Compras / estoque</button><button className={'btn '+(aba==='producoes'?'primary':'')} onClick={()=>setAba('producoes')}>Consumo por produção</button><button className={'btn '+(aba==='mensais'?'primary':'')} onClick={()=>setAba('mensais')}>Despesas mensais</button></div>{materiaisBaixos.length>0&&<div className="stock-alert"><strong>⚠ Estoque baixo:</strong> {materiaisBaixos.map(m=>`${m.nome} (${fmt(saldoProduto(m.nome))} ${m.unidade})`).join(' • ')}</div>}
 
-      <h3 className="economic-section-title">Estrutura de custos</h3>
-      <div className="cost-kpis">
-        <div><span>Custos fixos</span><strong>{moeda(indicadores.fixos)}</strong></div>
-        <div><span>Custos variáveis</span><strong>{moeda(indicadores.variaveis)}</strong></div>
-        <div><span>Depreciação</span><strong>{moeda(indicadores.depreciacao)}</strong></div>
-        <div className="cost-highlight"><span>Custo total</span><strong>{moeda(indicadores.custoTotal)}</strong></div>
-      </div>
+    {aba==='resumo'&&<><h3 className="economic-section-title">Resumo de {competencia.split('-').reverse().join('/')}</h3><div className="economic-kpis"><div><span>Gastos mensais</span><strong>{moeda(custoMensal)}</strong><small>salários, energia, nitrogênio, fretes e outros</small></div><div><span>Materiais consumidos</span><strong>{moeda(totalInsumosMes)}</strong><small>somente o que foi efetivamente usado</small></div><div><span>Custo total</span><strong>{moeda(custoTotal)}</strong><small>mensal + materiais consumidos</small></div><div><span>OPUs</span><strong>{opu}</strong><small>{opu?moeda(custoTotal/opu):'—'} / OPU</small></div><div><span>Oócitos viáveis</span><strong>{oocitos}</strong><small>{oocitos?moeda(custoTotal/oocitos):'—'} / oócito</small></div><div><span>Embriões D7</span><strong>{d7}</strong><small>{d7?moeda(custoTotal/d7):'—'} / embrião</small></div></div><h3 className="economic-section-title">Custo direto por propriedade</h3><div className="table-wrap"><table><thead><tr><th>Propriedade/cliente</th><th>D7</th><th>Materiais utilizados</th><th>Outros custos diretos</th><th>Total direto</th><th>R$/D7 direto</th></tr></thead><tbody>{porCliente.map(x=><tr key={x.id}><td><strong>{x.nome}</strong></td><td>{x.d7}</td><td>{moeda(x.insumos)}</td><td>{moeda(x.diretos)}</td><td><strong>{moeda(x.total)}</strong></td><td>{x.d7?moeda(x.total/x.d7):'—'}</td></tr>)}{!porCliente.length&&<tr><td colSpan={6}>Sem custos atribuídos a propriedades neste mês.</td></tr>}</tbody></table></div></>}
 
-      <h3 className="economic-section-title">Eficiência e custo unitário</h3>
-      <div className="economic-kpis">
-        <div><span>OPUs</span><strong>{indicadores.opus}</strong><small>{moeda(indicadores.custoOPU)} / OPU</small></div>
-        <div><span>Oócitos viáveis</span><strong>{indicadores.oocitosViaveis}</strong><small>{moeda(indicadores.custoOocito)} / viável</small></div>
-        <div className="primary-economic"><span>Embriões D7</span><strong>{indicadores.d7}</strong><small>{moeda(indicadores.custoD7)} / embrião D7</small></div>
-        <div><span>Taxa de produção</span><strong>{pct(indicadores.taxaProducao)}</strong><small>D7 ÷ viáveis</small></div>
-        <div><span>Embriões destinados</span><strong>{indicadores.destinados}</strong><small>{moeda(indicadores.custoDestinado)} / destinado</small></div>
-        <div><span>Fresco / DT / VT</span><strong>{indicadores.fresco} / {indicadores.dt} / {indicadores.vt}</strong><small>destinação dos embriões</small></div>
-        <div><span>Prenhezes registradas</span><strong>{indicadores.prenhes}</strong><small>{indicadores.prenhes?moeda(indicadores.custoPrenhez)+' / prenhez':'Sem DG positiva no mês'}</small></div>
-      </div>
+    {aba==='materiais'&&<><div className="panel-head"><div><h3>Cadastro de materiais e meios</h3><p>Catálogo central do laboratório. Os produtos desta lista aparecem nas compras e serão usados no controle de estoque e custos.</p></div><button className="btn primary" onClick={()=>setMaterialEdit(materialVazio())}>+ Novo material</button></div><div className="material-toolbar"><SearchBar value={buscaMaterial} onChange={setBuscaMaterial} placeholder="Buscar material, meio ou insumo"/><select value={categoriaMaterial} onChange={e=>setCategoriaMaterial(e.target.value)}><option>Todos</option>{categoriasMateriais.map(c=><option key={c}>{c}</option>)}</select></div><div className="material-cards">{materiaisFiltrados.map(m=><div className="material-card" key={m.id}><div><span className="material-category">{m.categoria}</span><h4>{m.nome}</h4><small>{m.tipo||'Material'} • {m.unidade}</small></div><div className="material-price"><small>Estoque atual</small><strong className={n(m.estoqueMinimo)>0&&saldoProduto(m.nome)<=n(m.estoqueMinimo)?'stock-danger':''}>{fmt(saldoProduto(m.nome))} {m.unidade}</strong><small>Mínimo: {fmt(n(m.estoqueMinimo))}</small></div><div className="material-price"><small>Preço referência</small><strong>{m.precoReferencia?moeda(m.precoReferencia):'—'}</strong></div><button className="btn small" onClick={()=>setMaterialEdit({...m})}>Editar</button></div>)}</div>{!materiaisFiltrados.length&&<p>Nenhum material encontrado.</p>}</>}
 
-      <div className="economic-explain">
-        <strong>Como interpretar:</strong> “Custo por embrião D7” é o indicador principal do custo de produção laboratorial.
-        “Custo por embrião destinado” usa Fresco + DT + VT. “Custo por prenhez” adiciona o valor informado de TE/receptoras antes de dividir pelas prenhezes registradas.
-      </div>
+    {aba==='mensais'&&<><div className="panel-head"><div><h3>Despesas mensais do laboratório</h3><p>Substitui a tabela “Valores por Embrião”: salário, luz, meios/frete, nitrogênio, gás, CO₂, escritório, livraria, limpeza e demais despesas.</p></div><button className="btn primary" onClick={()=>setEdit({...vazio,competencia})}>+ Despesa mensal</button></div><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Propriedade</th><th>Valor</th><th>Ações</th></tr></thead><tbody>{custos.map(c=><tr key={c.id}><td>{c.tipo}</td><td>{c.categoria}</td><td>{c.descricao||'—'}</td><td>{db.clientes.find(x=>x.id===c.clienteId)?.nome||'Laboratório/compartilhado'}</td><td><strong>{moeda(c.valor)}</strong></td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...c})}>Editar</button><button className="btn small danger" onClick={()=>confirm('Excluir esta despesa?')&&onChange({...db,custosProducao:db.custosProducao.filter(x=>x.id!==c.id)})}>Excluir</button></div></td></tr>)}{!custos.length&&<tr><td colSpan={6}>Nenhuma despesa cadastrada neste mês.</td></tr>}</tbody><tfoot><tr><th colSpan={4}>TOTAL DO MÊS</th><th>{moeda(custoMensal)}</th><th/></tr></tfoot></table></div></>}
 
-      {precoEmb>0&&<><h3 className="economic-section-title">Resultado econômico</h3>
-        <div className="cost-kpis">
-          <div><span>Preço médio informado</span><strong>{moeda(precoEmb)}</strong></div>
-          <div><span>Margem estimada / D7</span><strong>{moeda(indicadores.margemUnitaria)}</strong></div>
-          <div><span>Resultado sobre destinados</span><strong>{moeda(indicadores.margemTotal)}</strong></div>
-          <div><span>Ponto de equilíbrio</span><strong>{indicadores.pontoEquilibrio||'—'}</strong><small>embriões D7/mês</small></div>
-        </div></>}
+    {aba==='compras'&&<><div className="panel-head"><div><h3>Notas fiscais e estoque de materiais</h3><p>A compra forma estoque. O custo entra no mês/propriedade somente quando o material é utilizado.</p></div><button className="btn primary" onClick={()=>setNotaEdit(notaVazia())}>+ Nota fiscal</button></div><div className="table-wrap"><table><thead><tr><th>Data/NF</th><th>Fornecedor</th><th>Produto</th><th>Comprado</th><th>R$/unidade</th><th>Usado</th><th>Saldo</th><th>Valor da compra</th><th>Ações</th></tr></thead><tbody>{notas.flatMap(nota=>nota.itens.map((i,idx)=>{const usado=consumos.filter(c=>c.itemId===i.id).reduce((s,c)=>s+n(c.quantidade),0);return <tr key={i.id}><td>{idx===0?<><strong>{nota.data.split('-').reverse().join('/')}</strong><small className="sub-info">NF {nota.numero||'s/n'}</small></>:''}</td><td>{idx===0?nota.fornecedor||'—':''}</td><td><strong>{i.produto}</strong></td><td>{fmt(i.quantidade)} {i.unidade}</td><td>{moeda(i.valorUnitario)}</td><td>{fmt(usado)} {i.unidade}</td><td><strong className={(()=>{const m=materiais.find(m=>m.nome===i.produto);return m&&n(m.estoqueMinimo)>0&&saldoProduto(i.produto)<=n(m.estoqueMinimo)?'stock-danger':''})()}>{fmt(Math.max(0,i.quantidade-usado))} {i.unidade}</strong></td><td>{moeda(i.valorTotal)}</td><td>{idx===0&&<div className="actions">{nota.arquivoDataUrl&&<a className="btn small" href={nota.arquivoDataUrl} target="_blank" rel="noreferrer">Ver NF</a>}<button className="btn small" onClick={()=>setNotaEdit(structuredClone(nota))}>Editar</button><button className="btn small danger" onClick={()=>excluirNota(nota.id)}>Excluir NF</button></div>}</td></tr>}))}{!notas.length&&<tr><td colSpan={9}>Nenhuma nota fiscal cadastrada.</td></tr>}</tbody></table></div></>}
 
-      <h3 className="economic-section-title">Custos por categoria</h3>
-      <div className="cost-category-grid">
-        {porCategoria.map(x=><div key={x.categoria}><span>{x.categoria}</span><strong>{moeda(x.valor)}</strong></div>)}
-      </div>
-
-      <h3 className="economic-section-title">Custo estimado por cliente</h3>
-      <div className="economic-explain">
-        Custos vinculados a um cliente entram diretamente nele. Custos sem cliente são compartilhados proporcionalmente aos embriões D7 produzidos no mês.
-      </div>
-      <div className="table-wrap">
-        <table><thead><tr><th>Cliente</th><th>D7</th><th>Custos diretos</th><th>Rateio compartilhado</th><th>Custo atribuído</th><th>Custo/D7</th></tr></thead>
-        <tbody>{porCliente.map(x=><tr key={x.id}><td><strong>{x.nome}</strong></td><td>{x.d7}</td><td>{moeda(x.diretos)}</td><td>{moeda(x.rateio)}</td><td>{moeda(x.custo)}</td><td><strong>{moeda(x.custoD7)}</strong></td></tr>)}
-        {!porCliente.length&&<tr><td colSpan={6}>Sem dados para rateio neste mês.</td></tr>}</tbody></table>
-      </div>
-
-      <h3 className="economic-section-title">Lançamentos</h3>
-      <div className="table-wrap"><table>
-        <thead><tr><th>Tipo</th><th>Categoria</th><th>Cliente</th><th>Descrição</th><th>Valor</th><th>Observação</th><th>Ações</th></tr></thead>
-        <tbody>{custos.map(c=><tr key={c.id}>
-          <td><span className={`cost-type ${(c.tipo||'Variável').toLowerCase().replace('á','a')}`}>{c.tipo||'Variável'}</span></td>
-          <td>{c.categoria}</td><td>{db.clientes.find(x=>x.id===c.clienteId)?.nome||'Compartilhado'}</td>
-          <td>{c.descricao||'—'}</td><td>{moeda(c.valor)}</td><td>{c.obs||''}</td>
-          <td><div className="actions"><button className="btn small" onClick={()=>setEdit({...c})}>Editar</button>
-          <button className="btn small danger" onClick={()=>{if(confirm('Excluir este custo?'))onChange({...db,custosProducao:db.custosProducao.filter(x=>x.id!==c.id)})}}>Excluir</button></div></td>
-        </tr>)}{!custos.length&&<tr><td colSpan={7}>Nenhum custo cadastrado nesta competência.</td></tr>}</tbody>
-      </table></div>
+    {aba==='producoes'&&<><div className="panel-head"><div><h3>Consumo de meios e materiais por produção</h3><p>Calculadora baseada nas fórmulas da sua planilha “CÁLCULOS MEIOS”. Selecione uma produção para ver a necessidade calculada e lançar o consumo real do lote comprado.</p></div><button className="btn" onClick={()=>setConsumoEdit({data:hoje(),notaFiscalId:'',itemId:'',clienteId:'',quantidade:'',obs:''})}>+ Consumo manual</button></div><Field label="Produção / propriedade"><select value={producaoCalc} onChange={e=>setProducaoCalc(e.target.value)}><option value="">Selecione...</option>{[...new Map(producoesMes.map(p=>[chaveProd(p),p])).values()].sort((a,b)=>a.data.localeCompare(b.data)).map(p=><option key={p.id} value={p.id}>{p.data.split('-').reverse().join('/')} — {db.clientes.find(c=>c.id===p.clienteId)?.nome||'Cliente'}</option>)}</select></Field>{producaoSelecionada&&<><div className="economic-kpis"><div><span>Doadoras da produção</span><strong>{doadorasProd}</strong></div><div><span>Touros da produção</span><strong>{tourosProd}</strong></div><div><span>Materiais já lançados</span><strong>{moeda(consumos.filter(c=>c.chaveProducao===chaveProd(producaoSelecionada)&&c.status!=='Rascunho').reduce((s,c)=>s+custoConsumo(c),0))}</strong></div></div><div className="table-wrap"><table><thead><tr><th>Status</th><th>Insumo</th><th>Calculado</th><th>Utilizado (editável)</th><th>Unidade</th><th></th></tr></thead><tbody>{consumos.filter(c=>c.chaveProducao===chaveProd(producaoSelecionada)).map(c=><tr key={c.id}><td><span className={c.status==='Rascunho'?'draft-badge':'confirmed-badge'}>{c.status==='Rascunho'?'A conferir':'Confirmado'}</span></td><td><strong>{c.produto||itemPorId(c.notaFiscalId,c.itemId)?.produto||'Material'}</strong></td><td>{fmt(n(c.quantidadeCalculada??c.quantidade))}</td><td>{c.status==='Rascunho'?<input className="economic-qty-input" inputMode="decimal" value={String(c.quantidade).replace('.',',')} onChange={e=>atualizarRascunho(c.id,e.target.value)}/>:fmt(n(c.quantidade))}</td><td>{c.unidade||itemPorId(c.notaFiscalId,c.itemId)?.unidade||''}</td><td>{c.status==='Rascunho'?<button className="btn small primary" onClick={()=>confirmarRascunho(c)}>Confirmar / escolher lote</button>:<span>✓</span>}</td></tr>)}</tbody></table></div></>}<h3 className="economic-section-title">Materiais efetivamente utilizados no mês</h3><div className="table-wrap"><table><thead><tr><th>Data</th><th>Propriedade</th><th>Produto</th><th>Quantidade</th><th>R$/unidade</th><th>Total</th><th>Origem</th><th></th></tr></thead><tbody>{consumosMes.map(c=>{const i=itemPorId(c.notaFiscalId,c.itemId);return <tr key={c.id}><td>{c.data.split('-').reverse().join('/')}</td><td>{db.clientes.find(x=>x.id===c.clienteId)?.nome||'—'}</td><td>{i?.produto||'—'}</td><td>{fmt(n(c.quantidade))} {i?.unidade||''}</td><td>{moeda(n(i?.valorUnitario))}</td><td><strong>{moeda(custoConsumo(c))}</strong></td><td>{c.origem||'Manual'}</td><td><button className="btn small danger" onClick={()=>confirm('Excluir este consumo?')&&onChange({...db,consumosInsumos:consumos.filter(x=>x.id!==c.id)})}>Excluir</button></td></tr>})}{!consumosMes.length&&<tr><td colSpan={8}>Nenhum material utilizado neste mês.</td></tr>}</tbody></table></div></>}
     </div>
 
-    {edit&&<Modal title={edit.id?'Editar custo':'Novo custo'} onClose={()=>setEdit(null)}>
-      <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Competência"><input type="month" value={edit.competencia} onChange={e=>setEdit({...edit,competencia:e.target.value})}/></Field>
-        <Field label="Tipo de custo"><select value={edit.tipo||'Variável'} onChange={e=>setEdit({...edit,tipo:e.target.value as CustoProducao['tipo']})}>{tipos.map(t=><option key={t}>{t}</option>)}</select></Field>
-        <Field label="Categoria"><select value={edit.categoria} onChange={e=>setEdit({...edit,categoria:e.target.value as CustoProducao['categoria']})}>{categorias.map(c=><option key={c}>{c}</option>)}</select></Field>
-        <Field label="Cliente (opcional)"><SearchableSelect value={edit.clienteId||''} onChange={v=>setEdit({...edit,clienteId:v})} options={[...db.clientes].sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(c=>({value:c.id,label:c.nome,search:[c.propriedade,c.municipio].join(' ')}))} placeholder="Digite o nome do cliente (opcional)"/></Field>
-        <Field label="Descrição"><input value={edit.descricao||''} onChange={e=>setEdit({...edit,descricao:e.target.value})}/></Field>
-        <Field label="Valor (R$)"><input type="number" min="0" step="0.01" value={edit.valor||''} onChange={e=>setEdit({...edit,valor:n(e.target.value)})}/></Field>
-        <Field label="Observações"><input value={edit.obs||''} onChange={e=>setEdit({...edit,obs:e.target.value})}/></Field>
-      </div>
-      <div className="modal-actions"><button className="btn" onClick={()=>setEdit(null)}>Cancelar</button><button className="btn primary" data-enter-final="true" onClick={()=>salvar(edit)}>Salvar custo</button></div>
-    </Modal>}
+    {edit&&<Modal title={edit.id?'Editar despesa':'Nova despesa mensal'} onClose={()=>setEdit(null)}><div className="form-grid" onKeyDown={handleEnterFlow}><Field label="Competência"><input type="month" value={edit.competencia} onChange={e=>setEdit({...edit,competencia:e.target.value})}/></Field><Field label="Tipo"><select value={edit.tipo||'Variável'} onChange={e=>setEdit({...edit,tipo:e.target.value as any})}>{tipos.map(t=><option key={t}>{t}</option>)}</select></Field><Field label="Categoria"><select value={edit.categoria} onChange={e=>setEdit({...edit,categoria:e.target.value as any})}>{categorias.map(c=><option key={c}>{c}</option>)}</select></Field><Field label="Propriedade (opcional)"><SearchableSelect value={edit.clienteId||''} onChange={v=>setEdit({...edit,clienteId:v})} options={db.clientes.map(c=>({value:c.id,label:c.nome}))} placeholder="Laboratório/compartilhado"/></Field><Field label="Descrição"><input placeholder="Ex.: Salário Patrícia, Luz 75%, Nitrogênio..." value={edit.descricao||''} onChange={e=>setEdit({...edit,descricao:e.target.value})}/></Field><Field label="Valor (R$)"><input type="text" inputMode="decimal" value={edit.valor||''} onChange={e=>setEdit({...edit,valor:n(e.target.value)})}/></Field><Field label="Observações"><input value={edit.obs||''} onChange={e=>setEdit({...edit,obs:e.target.value})}/></Field></div><div className="modal-actions"><button className="btn" onClick={()=>setEdit(null)}>Cancelar</button><button className="btn primary" onClick={()=>salvar(edit)}>Salvar</button></div></Modal>}
+
+    {materialEdit&&<Modal title={materialEdit.id?'Editar material':'Novo material'} onClose={()=>setMaterialEdit(null)}><div className="form-grid"><Field label="Nome"><input value={materialEdit.nome} onChange={e=>setMaterialEdit({...materialEdit,nome:e.target.value})}/></Field><Field label="Categoria"><select value={materialEdit.categoria} onChange={e=>setMaterialEdit({...materialEdit,categoria:e.target.value as any})}>{categoriasMateriais.map(c=><option key={c}>{c}</option>)}</select></Field><Field label="Tipo"><select value={materialEdit.tipo||'Matéria-prima'} onChange={e=>setMaterialEdit({...materialEdit,tipo:e.target.value as any})}><option>Matéria-prima</option><option>Semipronto</option><option>Meio preparado</option><option>Descartável</option></select></Field><Field label="Unidade"><input value={materialEdit.unidade} onChange={e=>setMaterialEdit({...materialEdit,unidade:e.target.value})}/></Field><Field label="Preço de referência (R$)"><input type="text" inputMode="decimal" value={materialEdit.precoReferencia||''} onChange={e=>setMaterialEdit({...materialEdit,precoReferencia:n(e.target.value)})}/></Field><Field label="Estoque mínimo (alerta vermelho)"><input type="text" inputMode="decimal" value={materialEdit.estoqueMinimo||''} onChange={e=>setMaterialEdit({...materialEdit,estoqueMinimo:n(e.target.value)})}/></Field><Field label="Observação"><input value={materialEdit.obs||''} onChange={e=>setMaterialEdit({...materialEdit,obs:e.target.value})}/></Field></div><div className="modal-actions"><button className="btn" onClick={()=>setMaterialEdit(null)}>Cancelar</button><button className="btn primary" onClick={()=>salvarMaterial(materialEdit)}>Salvar material</button></div></Modal>}
+
+    {notaEdit&&<Modal title={notaEdit.id?'Editar compra / nota fiscal':'Nova compra / nota fiscal'} onClose={()=>setNotaEdit(null)}><div className="invoice-import-box"><strong>Importar NF-e em XML</strong><span>Quando o XML trouxer os produtos, o sistema preenche as linhas automaticamente. O que não for identificado pode ser escolhido no catálogo.</span><input type="file" accept=".xml,text/xml,application/xml" onChange={e=>importarXml(e.target.files?.[0])}/></div><div className="form-grid"><Field label="Data da compra"><input type="date" value={notaEdit.data} onChange={e=>setNotaEdit({...notaEdit,data:e.target.value})}/></Field><Field label="Número da NF"><input value={notaEdit.numero||''} onChange={e=>setNotaEdit({...notaEdit,numero:e.target.value})}/></Field><Field label="Fornecedor"><input value={notaEdit.fornecedor||''} onChange={e=>setNotaEdit({...notaEdit,fornecedor:e.target.value})}/></Field><Field label="Anexar PDF/foto"><input type="file" accept="application/pdf,image/*" onChange={e=>anexarArquivo(e.target.files?.[0])}/><small>{notaEdit.arquivoNome||'Opcional'}</small></Field></div><div className="panel-head compact"><div><h3>Produtos da compra</h3><p>Selecione no catálogo. Quantidade e preço podem ser alterados livremente.</p></div><button className="btn small" onClick={()=>setNotaEdit({...notaEdit,itens:[...notaEdit.itens,itemVazio()]})}>+ Linha</button></div>{notaEdit.itens.map(i=><div className="invoice-item-grid catalog" key={i.id}><SearchableSelect value={materiais.find(m=>m.nome===i.produto)?.id||''} onChange={v=>selecionarMaterialNota(i.id,v)} options={materiais.map(m=>({value:m.id,label:m.nome,search:`${m.categoria} ${m.tipo||''}`}))} placeholder="Selecionar produto..."/><input placeholder="Unidade" value={i.unidade} onChange={e=>setNotaEdit({...notaEdit,itens:notaEdit.itens.map(x=>x.id===i.id?{...x,unidade:e.target.value}:x)})}/><input type="text" inputMode="decimal" placeholder="Quantidade" value={i.quantidade||''} onChange={e=>setNotaEdit({...notaEdit,itens:notaEdit.itens.map(x=>x.id===i.id?{...x,quantidade:e.target.value as any}:x)})}/><input type="text" inputMode="decimal" placeholder="R$/unidade" value={i.valorUnitario||''} onChange={e=>setNotaEdit({...notaEdit,itens:notaEdit.itens.map(x=>x.id===i.id?{...x,valorUnitario:e.target.value as any}:x)})}/><strong>{moeda(n(i.quantidade)*n(i.valorUnitario))}</strong><button className="btn small danger" onClick={()=>setNotaEdit({...notaEdit,itens:notaEdit.itens.filter(x=>x.id!==i.id)})}>×</button></div>)}<div className="modal-actions"><button className="btn" onClick={()=>setNotaEdit(null)}>Cancelar</button><button className="btn primary" onClick={()=>salvarNota(notaEdit)}>Salvar compra</button></div></Modal>}
+
+    {consumoEdit&&<Modal title="Registrar material utilizado" onClose={()=>setConsumoEdit(null)}><div className="form-grid"><Field label="Data de uso"><input type="date" value={consumoEdit.data} onChange={e=>setConsumoEdit({...consumoEdit,data:e.target.value})}/></Field><Field label="Propriedade/cliente"><SearchableSelect value={consumoEdit.clienteId} onChange={v=>setConsumoEdit({...consumoEdit,clienteId:v})} options={db.clientes.map(c=>({value:c.id,label:c.nome,search:c.propriedade||''}))} placeholder="Selecione"/></Field><Field label="Produto / lote da nota"><select value={consumoEdit.itemId?consumoEdit.notaFiscalId+'|'+consumoEdit.itemId:''} onChange={e=>{const [nf,it]=e.target.value.split('|');setConsumoEdit({...consumoEdit,notaFiscalId:nf||'',itemId:it||''})}}><option value="">Selecione...</option>{notas.flatMap(nf=>nf.itens.map(i=>{const usado=consumos.filter(c=>c.itemId===i.id).reduce((s,c)=>s+n(c.quantidade),0),saldo=Math.max(0,n(i.quantidade)-usado);return saldo>0?<option key={i.id} value={nf.id+'|'+i.id}>{i.produto} — saldo {fmt(saldo)} {i.unidade} — {moeda(i.valorUnitario)}/{i.unidade}</option>:null}))}</select></Field><Field label="Quantidade utilizada"><input type="text" inputMode="decimal" value={consumoEdit.quantidade} onChange={e=>setConsumoEdit({...consumoEdit,quantidade:e.target.value})}/></Field><Field label="Observação"><input value={consumoEdit.obs} onChange={e=>setConsumoEdit({...consumoEdit,obs:e.target.value})}/></Field></div><div className="modal-actions"><button className="btn" onClick={()=>setConsumoEdit(null)}>Cancelar</button><button className="btn primary" onClick={()=>salvarConsumo(consumoEdit)}>Registrar consumo</button></div></Modal>}
   </section>
 }

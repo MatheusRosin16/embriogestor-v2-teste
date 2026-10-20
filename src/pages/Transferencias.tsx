@@ -33,10 +33,12 @@ function nomeTipo(v?:string){
 
 export function Transferencias({
   db,
-  onChange
+  onChange,
+  filtroPeriodo
 }:{
   db:BancoEmbrioGestor
   onChange:(db:BancoEmbrioGestor)=>void
+  filtroPeriodo?:{periodo:'ANO'|'MES'|'TODOS',ano:string,mes:string}
 }){
   const[busca,setBusca]=useState('')
   const[edit,setEdit]=useState<Transferencia|null>(null)
@@ -46,13 +48,14 @@ export function Transferencias({
   const grupos=useMemo(()=>db.clientes.map(c=>{
     const itens=db.transferencias
       .filter(t=>t.clienteId===c.id)
+      .filter(t=>{const data=String(t.data||'').slice(0,10); return filtroPeriodo?.periodo==='TODOS'||!filtroPeriodo?.ano|| (data.slice(0,4)===filtroPeriodo.ano && (filtroPeriodo.periodo!=='MES'||data.slice(5,7)===filtroPeriodo.mes))})
       .filter(t=>{
         const d=db.doadoras.find(x=>x.id===t.doadoraId)
         const touro=db.touros.find(x=>x.id===t.touroId)
         const q=busca.toLowerCase()
         return !q||String(
           c.nome+' '+d?.nome+' '+touro?.nome+' '+t.receptora+' '+
-          t.data+' '+t.diagnostico+' '+t.embriãoEstagio+' '+t.embriãoGrau
+          t.data+' '+nomeDestino(t)+' '+t.diagnostico+' '+t.embriãoEstagio+' '+t.embriãoGrau
         ).toLowerCase().includes(q)
       })
 
@@ -60,8 +63,10 @@ export function Transferencias({
       cliente:c,
       itens:itens.sort((a,b)=>b.data.localeCompare(a.data))
     }
-  }).filter(g=>g.itens.length||!busca)
-    .sort((a,b)=>a.cliente.nome.localeCompare(b.cliente.nome,'pt-BR')),[db,busca])
+  }).filter(g=>g.itens.length>0)
+    .sort((a,b)=>a.cliente.nome.localeCompare(b.cliente.nome,'pt-BR')),[db,busca,filtroPeriodo])
+
+  const nomeDestino=(t:Transferencia)=>t.clienteDestinoNome?.trim()||db.clientes.find(c=>c.id===t.clienteDestinoId)?.nome||db.clientes.find(c=>c.id===t.clienteId)?.nome||"Destino não informado"
 
   function estoqueCompativel(t:Transferencia){
     if(t.destino!=='DT'&&t.destino!=='VT') return -1
@@ -89,48 +94,25 @@ export function Transferencias({
       return alert('Informe Ovário + CL.')
     }
 
-    const item:Transferencia={...t,id:t.id||id('TE')}
+    const item:Transferencia={...t,clienteDestinoNome:nomeDestino(t),id:t.id||id('TE')}
 
     let estoqueEmbrioes=[...db.estoqueEmbrioes]
     let movimentacoes=[...db.movimentacoes]
 
-    /*
-      Somente uma NOVA transferência DT/VT baixa estoque.
-      Edição não baixa novamente.
-    */
-    if(!t.id&&(item.destino==='DT'||item.destino==='VT')){
-      const idx=estoqueCompativel(item)
-
-      if(idx<0){
-        const d=db.doadoras.find(x=>x.id===item.doadoraId)
-        const touro=db.touros.find(x=>x.id===item.touroId)
-        alert(
-          `Selecione a data/origem do congelamento com embrião ${item.destino} disponível `+
-          `para ${d?.nome||'esta doadora'} × ${touro?.nome||'este touro'}.`
-        )
-        return
-      }
-
+    // Reverter a baixa anterior antes de recalcular a edição (sem descontar duas vezes).
+    const anterior=t.id?db.transferencias.find(x=>x.id===t.id):undefined
+    const congelado=(x?:Transferencia)=>x?.destino==='DT'||x?.destino==='VT'
+    if(anterior&&congelado(anterior)&&anterior.estoqueEmbriaoId){
+      const idx=estoqueEmbrioes.findIndex(e=>e.id===anterior.estoqueEmbriaoId)
+      if(idx>=0) estoqueEmbrioes[idx]={...estoqueEmbrioes[idx],quantidade:Number(estoqueEmbrioes[idx].quantidade||0)+1}
+      movimentacoes=movimentacoes.filter(m=>!(m.tipo==='SAIDA_EMBRIAO'&&m.descricao?.includes(`[TE:${anterior.id}]`)))
+    }
+    if(congelado(item)){
+      const idx=estoqueEmbrioes.findIndex(e=>e.id===item.estoqueEmbriaoId&&e.clienteId===item.clienteId&&e.doadoraId===item.doadoraId&&e.touroId===item.touroId&&e.tipo===item.destino&&Number(e.quantidade)>0)
+      if(idx<0){alert('Selecione um congelamento com saldo disponível para esta doadora, touro e tipo.');return}
       const e=estoqueEmbrioes[idx]
-      estoqueEmbrioes[idx]={
-        ...e,
-        quantidade:Math.max(0,Number(e.quantidade)-1)
-      }
-
-      const mov:MovimentacaoItem={
-        id:id('MOV'),
-        data:new Date().toISOString(),
-        tipo:'SAIDA_EMBRIAO',
-        clienteId:item.clienteId,
-        doadoraId:item.doadoraId,
-        touroId:item.touroId,
-        estoqueId:e.id,
-        quantidade:1,
-        descricao:
-          `Transferência de embrião ${item.destino} — receptora ${item.receptora}`
-      }
-
-      movimentacoes=[...movimentacoes,mov]
+      estoqueEmbrioes[idx]={...e,quantidade:Number(e.quantidade)-1}
+      movimentacoes.push({id:id('MOV'),data:new Date().toISOString(),tipo:'SAIDA_EMBRIAO',clienteId:item.clienteId,doadoraId:item.doadoraId,touroId:item.touroId,estoqueId:e.id,quantidade:1,descricao:`[TE:${item.id}] Transferência ${item.destino} — receptora ${item.receptora}`})
     }
 
     const transferencias=t.id
@@ -139,6 +121,22 @@ export function Transferencias({
 
     onChange({...db,transferencias,estoqueEmbrioes,movimentacoes})
     setEdit(null)
+  }
+
+  function excluirTransferencia(t:Transferencia){
+    const congelado=t.destino==='DT'||t.destino==='VT'
+    const saidas=db.movimentacoes.filter(m=>m.tipo==='SAIDA_EMBRIAO'&&m.descricao?.includes(`[TE:${t.id}]`))
+    if(congelado&&t.estoqueEmbriaoId&&saidas.length===0){
+      alert('Esta transferência não possui uma baixa identificável. Exclusão bloqueada para evitar divergência de estoque.');return
+    }
+    const msg=congelado?'Excluir lançamento incorreto e devolver o embrião ao estoque? Só confirme se ele NÃO foi fisicamente descongelado/aquecido.':'Excluir esta transferência?'
+    if(!confirm(msg))return
+    const estoqueEmbrioes=db.estoqueEmbrioes.map(e=>{
+      if(e.id!==t.estoqueEmbriaoId)return e
+      return {...e,quantidade:Number(e.quantidade||0)+saidas.reduce((n,m)=>n+Number(m.quantidade||0),0)}
+    })
+    const estornos:MovimentacaoItem[]=saidas.map(m=>({...m,id:id('MOV'),data:new Date().toISOString(),tipo:'ENTRADA_EMBRIAO',descricao:`[ESTORNO TE:${t.id}] Correção de lançamento — ${m.descricao}`}))
+    onChange({...db,transferencias:db.transferencias.filter(x=>x.id!==t.id),estoqueEmbrioes,movimentacoes:[...db.movimentacoes,...estornos]})
   }
 
   const doadorasCliente=edit
@@ -225,14 +223,14 @@ export function Transferencias({
     <div className="toolbar donor-search-toolbar"><SearchBar value={busca} onChange={v=>{setBusca(v);if(v){setClienteAberto(null);setDataAberta(null)}}} placeholder="Pesquisar cliente, doadora, touro, receptora, estágio ou diagnóstico"/></div>
 
     <div className={`donor-folders ${clienteAberto&&!busca.trim()?'has-open':''}`}>
-      {grupos.map(g=>{const aberto=clienteAberto===g.cliente.id;if(clienteAberto&&!aberto)return null;const datas=[...new Set(g.itens.map(t=>String(t.data||'').slice(0,10)))].sort((a,b)=>b.localeCompare(a));return <div className={`donor-client-card ${aberto?'is-open':''}`} key={g.cliente.id}>
+      {grupos.map(g=>{const aberto=clienteAberto===g.cliente.id;if(clienteAberto&&!aberto)return null;const datas=[...new Set(g.itens.map(t=>String(t.data||'').slice(0,10)+'|'+nomeDestino(t)))].sort((a,b)=>b.localeCompare(a));return <div className={`donor-client-card ${aberto?'is-open':''}`} key={g.cliente.id}>
         <button type="button" className="donor-client-button" onClick={()=>{setClienteAberto(aberto?null:g.cliente.id);setDataAberta(null);if(!aberto)setBusca('')}}><span className="donor-folder-icon">▰</span><span className="donor-client-main"><strong>{g.cliente.nome}</strong><small>{g.cliente.propriedade||g.cliente.municipio||'Cliente'}</small></span><span className="donor-folder-count">{datas.length} data(s)</span></button>
         {aberto&&<div className="donor-open-content"><div className="donor-open-head"><div><strong>{g.cliente.nome}</strong><span>{g.itens.length} transferência(s) em {datas.length} data(s)</span></div><div className="actions"><button className="btn small" onClick={()=>{setClienteAberto(null);setDataAberta(null);setBusca('')}}>Voltar aos clientes</button><button className="btn primary small" onClick={()=>setEdit({...vazio,clienteId:g.cliente.id})}>+ Nova transferência</button></div></div>
-        <div className="date-folder-grid">{datas.map(data=>{const itensData=g.itens.filter(t=>String(t.data||'').slice(0,10)===data);const chave=g.cliente.id+'|'+data;const dataOpen=dataAberta===chave;return <div className={`date-folder-card ${dataOpen?'is-open':''}`} key={chave}>
-          <button className="date-folder-button" onClick={()=>setDataAberta(dataOpen?null:chave)}><span className="date-folder-icon">▰</span><span><strong>{data.split('-').reverse().join('/')}</strong><small>{itensData.length} transferência(s)</small></span></button>
-          {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Transferências de {data.split('-').reverse().join('/')}</strong><button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button></div>
+        <div className="date-folder-grid">{datas.map(grupo=>{const [data,destinoNome]=grupo.split('|');const itensData=g.itens.filter(t=>String(t.data||'').slice(0,10)===data&&nomeDestino(t)===destinoNome);const chave=g.cliente.id+'|'+grupo;const dataOpen=dataAberta===chave;return <div className={`date-folder-card ${dataOpen?'is-open':''}`} key={chave}>
+          <button className="date-folder-button" onClick={()=>setDataAberta(dataOpen?null:chave)}><span className="date-folder-icon">▰</span><span><strong>{data.split('-').reverse().join('/')} — {destinoNome}</strong><small>{itensData.length} transferência(s)</small></span></button>
+          {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Transferências de {data.split('-').reverse().join('/')} — {destinoNome}</strong><button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button></div>
           <div className="table-wrap"><table><thead><tr><th>Receptora</th><th>Doadora</th><th>Touro</th><th>Estágio</th><th>Grau D7</th><th>Ovário + CL</th><th>Embrião</th><th>DG</th><th>Profissional</th><th>Ações</th></tr></thead><tbody>
-          {itensData.map(t=>{const d=db.doadoras.find(x=>x.id===t.doadoraId);const touro=db.touros.find(x=>x.id===t.touroId);const prof=db.profissionais.find(x=>x.id===t.profissionalId);const donoDoadora=db.clientes.find(x=>x.id===d?.clienteId);return <tr key={t.id}><td><strong>{t.receptora||'—'}</strong>{t.geradaPelaProducao&&!t.receptora&&<small className="auto-opu-badge">A preencher</small>}</td><td>{d?.nome||'—'}{d?.clienteId!==t.clienteId&&<small className="sub-info">Outro produtor: {donoDoadora?.nome||'—'}</small>}</td><td>{touro?.nome||'—'}</td><td><strong>{t.embriãoEstagio||'—'}</strong></td><td>{t.embriãoGrau||'—'}</td><td>{t.ovarioCL||'—'}</td><td><strong>{nomeTipo(t.destino)}</strong></td><td>{t.diagnostico||'—'}</td><td>{prof?.nome||'—'}</td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...t})}>Editar</button><button className="btn small danger" onClick={()=>{if(confirm('Excluir esta transferência?'))onChange({...db,transferencias:db.transferencias.filter(x=>x.id!==t.id)})}}>Excluir</button></div></td></tr>})}
+          {itensData.map(t=>{const d=db.doadoras.find(x=>x.id===t.doadoraId);const touro=db.touros.find(x=>x.id===t.touroId);const prof=db.profissionais.find(x=>x.id===t.profissionalId);const donoDoadora=db.clientes.find(x=>x.id===d?.clienteId);return <tr key={t.id}><td><strong>{t.receptora||'—'}</strong>{t.geradaPelaProducao&&!t.receptora&&<small className="auto-opu-badge">A preencher</small>}</td><td>{d?.nome||'—'}{d?.clienteId!==t.clienteId&&<small className="sub-info">Outro produtor: {donoDoadora?.nome||'—'}</small>}</td><td>{touro?.nome||'—'}</td><td><strong>{t.embriãoEstagio||'—'}</strong></td><td>{t.embriãoGrau||'—'}</td><td>{t.ovarioCL||'—'}</td><td><strong>{nomeTipo(t.destino)}</strong></td><td>{t.diagnostico||'—'}</td><td>{prof?.nome||'—'}</td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...t})}>Editar</button><button className="btn small danger" onClick={()=>excluirTransferencia(t)}>Excluir</button></div></td></tr>})}
           </tbody></table></div></div>}
         </div>})}</div></div>}
       </div>})}
@@ -289,6 +287,10 @@ export function Transferencias({
           <Field label={edit.usarDoadoraOutroProdutor?'Doadora de outro produtor':'Doadora do cliente'}><SearchableSelect value={edit.doadoraId} onChange={v=>setEdit({...edit,doadoraId:v,estoqueEmbriaoId:''})} options={(edit.usarDoadoraOutroProdutor?doadorasOutros:doadorasCliente).map(d=>{const dono=db.clientes.find(c=>c.id===d.clienteId);return {value:d.id,label:edit.usarDoadoraOutroProdutor?`${dono?.nome||'Outro produtor'} — ${d.nome}`:d.nome,search:[d.registro,d.raca].join(' ')}})} placeholder="Digite o número/nome da doadora"/></Field>
 
           <Field label="Touro do cliente"><SearchableSelect value={edit.touroId} onChange={v=>setEdit({...edit,touroId:v,estoqueEmbriaoId:''})} options={tourosCliente.map(t=>({value:t.id,label:t.nome,search:[t.registro,t.codigo,t.tipoSemen].join(' ')}))} placeholder="Digite o nome do touro"/></Field>
+
+          <Field label="Cliente/Fazenda de destino da transferência">
+            <input list="clientes-destino-te" value={edit.clienteDestinoNome??db.clientes.find(c=>c.id===edit.clienteDestinoId)?.nome??''} onChange={e=>setEdit({...edit,clienteDestinoNome:e.target.value,clienteDestinoId:undefined})} placeholder="Digite qualquer nome de cliente ou fazenda"/><datalist id="clientes-destino-te">{db.clientes.map(c=><option key={c.id} value={c.nome}/>)}</datalist>
+          </Field>
 
           <Field label="Receptora">
             <input
@@ -366,7 +368,7 @@ export function Transferencias({
           {(edit.destino==='DT'||edit.destino==='VT')&&<Field label="Data/origem do congelamento">
             <select value={edit.estoqueEmbriaoId||''} onChange={e=>setEdit({...edit,estoqueEmbriaoId:e.target.value})}>
               <option value="">Selecione a data do congelamento...</option>
-              {db.estoqueEmbrioes.filter(e=>e.clienteId===edit.clienteId&&e.doadoraId===edit.doadoraId&&e.touroId===edit.touroId&&e.tipo===edit.destino&&Number(e.quantidade)>0).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))).map(e=><option key={e.id} value={e.id}>{e.data?e.data.split('-').reverse().join('/'):'Sem data'} — {e.tipo} — saldo {e.quantidade} — {e.botijao||'sem botijão'}/{e.caneca||'sem caneca'}</option>)}
+              {db.estoqueEmbrioes.filter(e=>e.clienteId===edit.clienteId&&e.doadoraId===edit.doadoraId&&e.touroId===edit.touroId&&e.tipo===edit.destino&&(Number(e.quantidade)>0||e.id===edit.estoqueEmbriaoId)).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))).map(e=><option key={e.id} value={e.id}>{e.data?e.data.split('-').reverse().join('/'):'Sem data'} — {e.tipo} — saldo {e.quantidade} — {e.botijao||'sem botijão'}/{e.caneca||'sem caneca'}</option>)}
             </select>
           </Field>}
 

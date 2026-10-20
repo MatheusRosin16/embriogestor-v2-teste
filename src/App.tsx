@@ -13,7 +13,6 @@ import { EstoqueSemen } from './pages/EstoqueSemen'
 import { EstoqueEmbrioes } from './pages/EstoqueEmbrioes'
 import { Movimentacoes } from './pages/Movimentacoes'
 import { Transferencias } from './pages/Transferencias'
-import { DigitalizarFichaTransferencia } from './pages/DigitalizarFichaTransferencia'
 import { Profissionais } from './pages/Profissionais'
 import { Relatorios } from './pages/Relatorios'
 import { RelatorioTransferenciaEditavel } from './pages/RelatorioTransferenciaEditavel'
@@ -43,7 +42,6 @@ const meta:Record<PageId,{titulo:string,descricao:string}>={
   movimentacoes:{titulo:'Movimentações',descricao:'Entradas, saídas e histórico de estoque'},
   aspiracoes:{titulo:'Aspiração de Oócitos',descricao:'OPUs agrupadas por cliente e data'},
   producoes:{titulo:'Produção de Embriões',descricao:'Produções agrupadas por cliente e data'},
-  digitalizarFicha:{titulo:'Digitalizar Ficha de TE',descricao:'Foto ou PDF para rascunho editável de transferência'},
   transferencias:{titulo:'Transferência de Embriões',descricao:'Transferências e diagnóstico de gestação'},
   analiseTouros:{titulo:'Análise de Touros',descricao:'Desempenho dos touros na produção'},
   custos:{titulo:'Gestão Econômica da PIVE',descricao:'Custos, eficiência e resultado por embrião'},
@@ -132,7 +130,10 @@ function Sistema({perfil}:{perfil:PerfilAcesso}){
   },[])
 
   function navegar(pageId:PageId){
-    setFiltroProducoes(null)
+    const f=dashboardFilter.filtro
+    if(pageId==='producoes' && f.periodo==='MES') setFiltroProducoes({modo:'MES',ano:f.ano,mes:f.mes})
+    else if(pageId==='producoes' && f.periodo==='ANO') setFiltroProducoes({modo:'ANO',ano:f.ano})
+    else setFiltroProducoes(null)
     setPage(pageId)
   }
 
@@ -192,20 +193,19 @@ function Sistema({perfil}:{perfil:PerfilAcesso}){
   else if(page==='doadoras') body=<Doadoras db={db} onChange={atualizar}/>
   else if(page==='touros') body=<Touros db={db} onChange={atualizar}/>
   else if(page==='racas') body=<Racas db={db} onChange={atualizar}/>
-  else if(page==='aspiracoes') body=<Aspiracoes db={db} onChange={atualizar}/>
+  else if(page==='aspiracoes') body=<Aspiracoes db={db} onChange={atualizar} filtroPeriodo={dashboardFilter.filtro}/>
   else if(page==='producoes') body=<Producoes db={db} onChange={atualizar} filtroInicial={filtroProducoes}/>
   else if(page==='estoque') body=<EstoqueSemen db={db} onChange={atualizar}/>
   else if(page==='estoqueEmbrioes') body=<EstoqueEmbrioes db={db} onChange={atualizar}/>
   else if(page==='movimentacoes') body=<Movimentacoes db={db}/>
-  else if(page==='transferencias') body=<Transferencias db={db} onChange={atualizar}/>
-  else if(page==='digitalizarFicha') body=<DigitalizarFichaTransferencia db={db} onChange={atualizar} onAbrirRelatorio={()=>navegar('relatorioTransferenciaEditavel')}/>
+  else if(page==='transferencias') body=<Transferencias db={db} onChange={atualizar} filtroPeriodo={dashboardFilter.filtro}/>
   else if(page==='profissionais') body=<Profissionais db={db} onChange={atualizar}/>
   else if(page==='relatorioTransferenciaEditavel') body=<RelatorioTransferenciaEditavel db={db} onChange={atualizar}/>
-  else if(page==='relatorios') body=<Relatorios db={db}/>
+  else if(page==='relatorios') body=<Relatorios db={db} filtroPeriodo={dashboardFilter.filtro}/>
   else if(page==='mapa') body=<RelatorioMapa db={db}/>
   else if(page==='custos') body=<CustosProducao db={db} onChange={atualizar}/>
   else if(page==='analiseTouros') body=<AnaliseTouros db={db}/>
-  else if(page==='importar') body=<Importar onImportar={atualizar}/>
+  else if(page==='importar') body=<Importar db={db} onImportar={atualizar}/>
   else if(page==='nuvem'&&perfil.role==='ADMIN') body=<NuvemBackup db={db} onChange={atualizar} onCloudChange={aplicarRemoto}/>
   else if(page==='acessos'&&perfil.role==='ADMIN') body=<Acessos db={db}/>
   else if(page==='identidadeEmpresa'&&perfil.role==='ADMIN') body=<IdentidadeEmpresaPage db={db} onChange={atualizar}/>

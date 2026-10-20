@@ -38,7 +38,14 @@ export function RelatorioTransferenciaEditavel({db,onChange}:{db:BancoEmbrioGest
   function alterar(i:number,campo:keyof Linha,valor:any){setLinhas(x=>x.map((l,n)=>n===i?{...l,[campo]:valor}:l))}
   function adicionar(){setLinhas(x=>[...x,{id:id('LIN'),data:hoje(),cliente:nomeRelatorio,doadora:'',racaDoadora:'',touro:'',racaTouro:'',receptora:'',grauD7:'',estagioD7:'',ovario:'',grauCL:'',clCavitario:'',diagnostico:'',dataDiagnostico:'',destino:'Fresco',estoqueEmbriaoId:'',estoqueBaixado:false}])}
   function excluir(i:number){setLinhas(x=>x.filter((_,n)=>n!==i))}
-  function imprimir(){window.print()}
+  function imprimir(){
+    const cliente=db.clientes.find(c=>c.id===clienteId)
+    const fazenda=(nomeRelatorio||cliente?.propriedade||cliente?.nome||'Fazenda').replace(/[\\/:*?"<>|]/g,'-')
+    const tituloAnterior=document.title
+    document.title=`${fazenda}_${periodo.replace(/[^0-9-]/g,'-')}_Transferencia`
+    window.addEventListener('afterprint',()=>{document.title=tituloAnterior},{once:true})
+    window.print()
+  }
 
   function opcoesEstoque(l:Linha){
     if(l.destino!=='DT'&&l.destino!=='VT')return []

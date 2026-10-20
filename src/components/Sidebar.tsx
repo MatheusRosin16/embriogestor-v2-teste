@@ -14,7 +14,6 @@ export type PageId =
   | 'aspiracoes'
   | 'producoes'
   | 'transferencias'
-  | 'digitalizarFicha'
   | 'analiseTouros'
   | 'custos'
   | 'relatorioTransferenciaEditavel'
@@ -38,7 +37,6 @@ const itens: {id: PageId; nome: string; icone: string}[] = [
   {id:'aspiracoes', nome:'Aspiração de Oócitos', icone:'O'},
   {id:'producoes', nome:'Produção de Embriões', icone:'◎'},
   {id:'transferencias', nome:'Transferência de Embriões', icone:'→'},
-  {id:'digitalizarFicha', nome:'Digitalizar Ficha de TE', icone:'▣'},
   {id:'analiseTouros', nome:'Análise de Touros', icone:'A'},
   {id:'custos', nome:'Gestão Econômica', icone:'$'},
   {id:'relatorioTransferenciaEditavel', nome:'Relatório Transferência Editável', icone:'▤'},
@@ -67,8 +65,8 @@ export function Sidebar({
   const [aberto,setAberto] = useState(false)
 
   const permitidos:Record<NivelAcesso,PageId[]>={
-    ADMIN:['dashboard','clientes','doadoras','touros','racas','profissionais','estoque','estoqueEmbrioes','movimentacoes','aspiracoes','producoes','transferencias','digitalizarFicha','analiseTouros','custos','relatorioTransferenciaEditavel','relatorios','mapa','importar','nuvem','acessos','identidadeEmpresa'],
-    VETERINARIO:['dashboard','clientes','doadoras','touros','racas','profissionais','estoque','estoqueEmbrioes','movimentacoes','aspiracoes','producoes','transferencias','digitalizarFicha','analiseTouros','relatorioTransferenciaEditavel','relatorios'],
+    ADMIN:['dashboard','clientes','doadoras','touros','racas','profissionais','estoque','estoqueEmbrioes','movimentacoes','aspiracoes','producoes','transferencias','analiseTouros','custos','relatorioTransferenciaEditavel','relatorios','mapa','importar','nuvem','acessos','identidadeEmpresa'],
+    VETERINARIO:['dashboard','clientes','doadoras','touros','racas','profissionais','estoque','estoqueEmbrioes','movimentacoes','aspiracoes','producoes','transferencias','analiseTouros','relatorioTransferenciaEditavel','relatorios'],
     CLIENTE:['portalCliente']
   }
   const visiveis=itens.filter(i=>permitidos[role].includes(i.id))

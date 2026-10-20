@@ -91,6 +91,7 @@ export interface Producao {
   transferidosFresco: number
   congeladosDT: number
   congeladosVT: number
+  opsDistribuicao?: number[] // Embriões por OPS, definidos na produção
   origemAspiracaoId?: string
   ordem?: number
   obs?: string
@@ -120,6 +121,7 @@ export interface EstoqueEmbriaoItem {
   botijao?: string
   caneca?: string
   raque?: string
+  opsId?: string // Identificação da OPS para vitrificação
   posicao?: string
   origemProducaoId?: string
   entregue?: boolean
@@ -167,6 +169,8 @@ export interface Profissional {
 }
 
 export interface Transferencia {
+  clienteDestinoNome?: string // Nome livre e persistido do destino
+  clienteDestinoId?: string // Fazenda onde a transferência ocorreu (não altera o dono do embrião)
   id: string
   data: string
   clienteId: string
@@ -185,6 +189,57 @@ export interface Transferencia {
   obs?: string
   geradaPelaProducao?: boolean
   estoqueEmbriaoId?: string
+}
+
+
+
+export interface MaterialLaboratorio {
+  id: string
+  nome: string
+  categoria: 'MIV' | 'FIV' | 'CIV' | 'TE' | 'DT' | 'VT' | 'Aquecimento' | 'Avulsos' | 'Descartáveis' | 'Outros'
+  unidade: string
+  precoReferencia?: number
+  tipo?: 'Matéria-prima' | 'Semipronto' | 'Meio preparado' | 'Descartável'
+  ativo?: boolean
+  obs?: string
+  estoqueMinimo?: number
+}
+
+export interface ItemNotaFiscal {
+  id: string
+  produto: string
+  unidade: string
+  quantidade: number
+  valorUnitario: number
+  valorTotal: number
+}
+
+export interface NotaFiscalCompra {
+  id: string
+  data: string
+  numero?: string
+  fornecedor?: string
+  arquivoNome?: string
+  arquivoDataUrl?: string
+  itens: ItemNotaFiscal[]
+  obs?: string
+}
+
+export interface ConsumoInsumo {
+  id: string
+  data: string
+  notaFiscalId: string
+  itemId: string
+  produto?: string
+  unidade?: string
+  status?: 'Rascunho' | 'Confirmado'
+  quantidadeCalculada?: number
+  chaveProducao?: string
+  clienteId: string
+  quantidade: number
+  producaoId?: string
+  origem?: 'Manual' | 'Produção'
+  obs?: string
 }
 
 export interface CustoProducao {
@@ -268,6 +323,9 @@ export interface BancoEmbrioGestor {
   congelamentos: any[]
   servicosSemen: ServicoSemen[]
   custosProducao: CustoProducao[]
+  materiaisLaboratorio: MaterialLaboratorio[]
+  notasFiscais: NotaFiscalCompra[]
+  consumosInsumos: ConsumoInsumo[]
   relatoriosTransferenciaEditaveis?: RelatorioTransferenciaEditavelSalvo[]
   identidadeEmpresa?: IdentidadeEmpresa
 }

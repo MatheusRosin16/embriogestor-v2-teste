@@ -4,12 +4,14 @@ import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
 import { handleEnterFlow } from '../components/EnterFlow'
 import { touroDoCliente } from '../services/tourosClientes'
 
-const n=(v:any)=>Math.max(0,Number(v)||0)
+const n=(v:any)=>Math.max(0,Number(String(v??'').replace(',','.'))||0)
 const id=(p:string)=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)
 const hoje=()=>new Date().toISOString().slice(0,10)
+const somarDias=(data:string,dias:number)=>{const d=new Date(data+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+dias);return d.toISOString().slice(0,10)}
+const validarOPS=(p:Producao)=>{const q=n(p.congeladosVT),ops=p.opsDistribuicao||[];return q===0|| (ops.length>0&&ops.every(x=>Number.isInteger(x)&&x>=1&&x<=5)&&ops.reduce((a,b)=>a+b,0)===q)}
 
 const novaProd:Producao={
-  id:'',data:hoje(),clienteId:'',doadoraId:'',touroId:'',
+  id:'',data:somarDias(hoje(),8),clienteId:'',doadoraId:'',touroId:'',
   oocitos:0,oocitosViaveis:0,clivados:0,embriõesD7:0,
   transferidosFresco:0,congeladosDT:0,congeladosVT:0,obs:''
 }
@@ -21,12 +23,14 @@ const novoServico:ServicoSemen={
 export type FiltroDashboardProducoes =
   | { modo: 'SERVICO'; clienteId: string; data: string }
   | { modo: 'MES'; ano: string; mes: string }
+  | { modo: 'ANO'; ano: string }
 
 export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor,onChange:(db:BancoEmbrioGestor)=>void,filtroInicial?:FiltroDashboardProducoes|null}){
   const[filtroDashboard,setFiltroDashboard]=useState<FiltroDashboardProducoes|null>(filtroInicial)
   const[busca,setBusca]=useState('')
   const[edit,setEdit]=useState<Producao|null>(null)
   const[manual,setManual]=useState<Producao|null>(null)
+  const[ultimaSessao,setUltimaSessao]=useState<{clienteId:string,data:string}|null>(null)
   const[servico,setServico]=useState<ServicoSemen|null>(null)
   const[clienteAberto,setClienteAberto]=useState<string|null>(null)
   const[dataAberta,setDataAberta]=useState<string|null>(null)
@@ -45,9 +49,9 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     }
     for(const itens of grupos.values()){
       const p=itens[0]
-      let asp=aspiracoes.find(a=>a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&a.data===p.data)
+      let asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId) || aspiracoes.find(a=>a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&somarDias(a.data,8)===p.data)
       if(!asp){
-        asp={id:id('ASP'),data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:itens.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:itens.reduce((v,x)=>v+n(x.oocitosViaveis),0),geradaPelaProducao:true,touroId:p.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
+        asp={id:id('ASP'),data:somarDias(p.data,-8),clienteId:p.clienteId,doadoraId:p.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:itens.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:itens.reduce((v,x)=>v+n(x.oocitosViaveis),0),geradaPelaProducao:true,touroId:p.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
         aspiracoes.push(asp);mudou=true
       }else if(asp.geradaPelaProducao){
         const total=itens.reduce((v,x)=>v+n(x.oocitos),0),viaveis=itens.reduce((v,x)=>v+n(x.oocitosViaveis),0)
@@ -69,6 +73,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       const data=String(p.data||'').slice(0,10)
       if(filtroDashboard?.modo==='SERVICO' && (p.clienteId!==filtroDashboard.clienteId || data!==filtroDashboard.data))continue
       if(filtroDashboard?.modo==='MES' && (data.slice(0,4)!==filtroDashboard.ano || data.slice(5,7)!==filtroDashboard.mes))continue
+      if(filtroDashboard?.modo==='ANO' && data.slice(0,4)!==filtroDashboard.ano)continue
 
       const c=db.clientes.find(x=>x.id===p.clienteId)
       const d=db.doadoras.find(x=>x.id===p.doadoraId)
@@ -159,7 +164,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
 
   function sincronizarAspiracaoDaProducao(baseAspiracoes:Aspiracao[],producoes:Producao[],item:Producao){
-    const existente=baseAspiracoes.find(a=>a.clienteId===item.clienteId&&a.doadoraId===item.doadoraId&&a.data===item.data)
+    const existente=baseAspiracoes.find(a=>a.id===item.origemAspiracaoId) || baseAspiracoes.find(a=>a.clienteId===item.clienteId&&a.doadoraId===item.doadoraId&&somarDias(a.data,8)===item.data)
     if(existente&&!existente.geradaPelaProducao)return {aspiracoes:baseAspiracoes,aspiracaoId:existente.id}
     const relacionadas=producoes.filter(p=>p.clienteId===item.clienteId&&p.doadoraId===item.doadoraId&&p.data===item.data)
     const total=relacionadas.reduce((s,p)=>s+n(p.oocitos),0)
@@ -167,23 +172,54 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     if(existente){
       return {aspiracoes:baseAspiracoes.map(a=>a.id===existente.id?{...a,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,touroId:a.touroId||item.touroId||''}:a),aspiracaoId:existente.id}
     }
-    const nova:Aspiracao={id:id('ASP'),data:item.data,clienteId:item.clienteId,doadoraId:item.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,geradaPelaProducao:true,touroId:item.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
+    const nova:Aspiracao={id:id('ASP'),data:somarDias(item.data,-8),clienteId:item.clienteId,doadoraId:item.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,geradaPelaProducao:true,touroId:item.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
     return {aspiracoes:[...baseAspiracoes,nova],aspiracaoId:nova.id}
+  }
+
+  function atualizarEstoqueCongelado(producao:Producao, estoqueInicial:EstoqueEmbriaoItem[], movimentosIniciais:MovimentacaoItem[]){
+    const estoque=[...estoqueInicial],movimentos=[...movimentosIniciais]
+    for(const tipo of ['DT','VT'] as const){
+      const existentes=estoque.filter(e=>e.origemProducaoId===producao.id&&e.tipo===tipo)
+      const usados=movimentos.filter(m=>m.tipo==='SAIDA_EMBRIAO'&&existentes.some(e=>e.id===m.estoqueId)).reduce((v,m)=>v+n(m.quantidade),0)
+      const totalNovo=tipo==='DT'?n(producao.congeladosDT):n(producao.congeladosVT)
+      if(existentes.some(e=>e.entregue)||usados>0){
+        const anterior=db.producoes.find(p=>p.id===producao.id)
+        const totalAntigo=tipo==='DT'?n(anterior?.congeladosDT):n(anterior?.congeladosVT)
+        if(totalNovo!==totalAntigo||(tipo==='VT'&&JSON.stringify(anterior?.opsDistribuicao||[])!==JSON.stringify(producao.opsDistribuicao||[])))throw new Error('Já existem movimentações deste congelamento. Não é possível redistribuir ou alterar a quantidade sem conciliação do estoque.')
+        continue
+      }
+      if(tipo==='VT'&&existentes.some(e=>e.quantidade<1))throw new Error('Há OPS VT já utilizadas. Não é possível redistribuir a produção.')
+      const quantidades=tipo==='VT'?(producao.opsDistribuicao||[]):totalNovo?[totalNovo]:[]
+      const jaCorreto=existentes.length===quantidades.length&&existentes.every((e,i)=>n(e.quantidade)===quantidades[i]&&(tipo!=='VT'||e.opsId===`${producao.id}-OPS-${String(i+1).padStart(2,'0')}`))
+      if(jaCorreto)continue
+      for(const e of existentes){const i=estoque.findIndex(x=>x.id===e.id);if(i>=0)estoque.splice(i,1)}
+      quantidades.forEach((q,i)=>{
+        const e:EstoqueEmbriaoItem={id:id('EMBEST'),clienteId:producao.clienteId,data:producao.data,doadoraId:producao.doadoraId,touroId:producao.touroId||'',tipo,quantidade:q,origemProducaoId:producao.id,opsId:tipo==='VT'?`${producao.id}-OPS-${String(i+1).padStart(2,'0')}`:undefined,botijao:existentes[i]?.botijao||'',caneca:existentes[i]?.caneca||'',raque:existentes[i]?.raque||'',posicao:existentes[i]?.posicao||'',obs:'Gerado pela produção; localização editável no estoque'}
+        estoque.push(e)
+        movimentos.push({id:id('MOV'),data:new Date().toISOString(),tipo:'ENTRADA_EMBRIAO',clienteId:e.clienteId,doadoraId:e.doadoraId,touroId:e.touroId,estoqueId:e.id,quantidade:q,descricao:`Entrada ${tipo} da produção ${producao.id}${e.opsId?' — '+e.opsId:''}`})
+      })
+    }
+    return {estoqueEmbrioes:estoque,movimentacoes:movimentos}
+  }
+
+
+  function camposOPS(p:Producao,alterar:(p:Producao)=>void){
+    const quantidades=p.opsDistribuicao||[]
+    return <div className="ops-editor" style={{gridColumn:'1 / -1',border:'1px solid #c8d8e3',padding:12,borderRadius:8}}>
+      <strong>Distribuição VT por OPS (1 a 5 embriões por OPS)</strong>
+      <p style={{fontSize:12,margin:'5px 0'}}>Identifique as OPS agora; botijão, caneca e rack serão preenchidos no estoque. Total: {quantidades.reduce((a,b)=>a+n(b),0)} de {n(p.congeladosVT)} embriões.</p>
+      {quantidades.map((q,i)=><div key={i} style={{display:'flex',gap:8,alignItems:'center',margin:'5px 0'}}><label style={{minWidth:68}}>OPS {i+1}</label><input aria-label={`Embriões OPS ${i+1}`} type="number" min="1" max="5" value={q} onChange={e=>alterar({...p,opsDistribuicao:quantidades.map((v,j)=>j===i?n(e.target.value):v)})}/><button type="button" className="btn small" onClick={()=>alterar({...p,opsDistribuicao:quantidades.filter((_,j)=>j!==i)})}>Excluir OPS</button></div>)}
+      <button type="button" className="btn small" onClick={()=>alterar({...p,opsDistribuicao:[...quantidades,Math.min(5,Math.max(1,n(p.congeladosVT)-quantidades.reduce((a,b)=>a+n(b),0)))]})}>+ Adicionar OPS</button>
+      {!validarOPS(p)&&<p style={{color:'#b42318',fontWeight:700}}>A soma das OPS deve ser igual aos embriões VT produzidos.</p>}
+    </div>
   }
 
   function salvarEdicao(p:Producao){
     const antigo=db.producoes.find(x=>x.id===p.id)
-    const atualizado={...p,clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
-    let estoqueEmbrioes=[...db.estoqueEmbrioes], movimentacoes=[...db.movimentacoes]
-    function sincronizarTipo(tipo:'DT'|'VT',novo:number,velho:number){
-      const delta=n(novo)-n(velho); if(delta===0||!atualizado.touroId)return
-      let item=estoqueEmbrioes.find(e=>e.origemProducaoId===atualizado.id&&e.tipo===tipo)
-      if(item){const novaQtd=Math.max(0,n(item.quantidade)+delta);estoqueEmbrioes=estoqueEmbrioes.map(e=>e.id===item!.id?{...e,quantidade:novaQtd}:e)}
-      else if(delta>0){const novoItem:EstoqueEmbriaoItem={id:id('EMBEST'),clienteId:atualizado.clienteId,data:atualizado.data,doadoraId:atualizado.doadoraId,touroId:atualizado.touroId||'',tipo,quantidade:delta,botijao:'',caneca:'',raque:'',posicao:'',origemProducaoId:atualizado.id,obs:'Gerado automaticamente pela Produção'};estoqueEmbrioes=[...estoqueEmbrioes,novoItem];item=novoItem}
-      const mov:MovimentacaoItem={id:id('MOV'),data:new Date().toISOString(),tipo:delta>0?'ENTRADA_EMBRIAO':'AJUSTE',clienteId:atualizado.clienteId,doadoraId:atualizado.doadoraId,touroId:atualizado.touroId,estoqueId:item?.id,quantidade:Math.abs(delta),descricao:delta>0?`Entrada automática de ${tipo} pela Produção de ${atualizado.data}`:`Ajuste automático de ${tipo} pela Produção de ${atualizado.data}`}
-      movimentacoes=[...movimentacoes,mov]
-    }
-    sincronizarTipo('DT',atualizado.congeladosDT,n(antigo?.congeladosDT));sincronizarTipo('VT',atualizado.congeladosVT,n(antigo?.congeladosVT))
+    const atualizado={...p,oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
+    let estoqueEmbrioes:EstoqueEmbriaoItem[],movimentacoes:MovimentacaoItem[]
+    try{({estoqueEmbrioes,movimentacoes}=atualizarEstoqueCongelado(atualizado,db.estoqueEmbrioes,db.movimentacoes))}catch(e){return alert((e as Error).message)}
+    if(!validarOPS(atualizado))return alert('Distribua todos os embriões VT em OPS de 1 a 5 embriões antes de salvar.')
     if(n(atualizado.oocitosViaveis)>n(atualizado.oocitos))return alert('Os oócitos viáveis não podem ser maiores que os oócitos totais.')
     let producoes=db.producoes.map(x=>x.id===p.id?atualizado:x)
     const sync=sincronizarAspiracaoDaProducao(db.aspiracoes,producoes,atualizado)
@@ -193,6 +229,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
   function salvarManual(p:Producao,continuarDivisao=false){
     if(!p.data||!p.clienteId||!p.doadoraId)return alert('Informe data, cliente e doadora.')
+    if(!validarOPS(p))return alert('Distribua todos os embriões VT em OPS de 1 a 5 embriões antes de salvar.')
     if(n(p.oocitosViaveis)>n(p.oocitos))return alert('Os oócitos viáveis não podem ser maiores que os oócitos totais.')
 
     const item:Producao={...p,id:p.id||id('PROD'),ordem:p.ordem||proximaOrdem(p.clienteId,p.data),oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
@@ -201,7 +238,10 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     const itemVinculado={...item,origemAspiracaoId:item.origemAspiracaoId||sync.aspiracaoId}
     producoes=producoes.map(x=>x.id===item.id?itemVinculado:x)
     const transferencias=sincronizarTransferenciasFresco(db.transferencias,itemVinculado,itemVinculado.transferidosFresco)
-    onChange({...db,aspiracoes:sync.aspiracoes,producoes,transferencias})
+    let estoqueEmbrioes:EstoqueEmbriaoItem[],movimentacoes:MovimentacaoItem[]
+    try{({estoqueEmbrioes,movimentacoes}=atualizarEstoqueCongelado(itemVinculado,db.estoqueEmbrioes,db.movimentacoes))}catch(e){return alert((e as Error).message)}
+    onChange({...db,aspiracoes:sync.aspiracoes,producoes,transferencias,estoqueEmbrioes,movimentacoes})
+    setUltimaSessao({clienteId:item.clienteId,data:item.data})
     if(continuarDivisao){
       setManual({...novaProd,data:item.data,clienteId:item.clienteId,doadoraId:item.doadoraId,origemAspiracaoId:sync.aspiracaoId,ordem:(item.ordem||0)+1})
     }else setManual(null)
@@ -211,7 +251,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     if(confirm('Excluir esta produção?')){
       const producoes=db.producoes.filter(x=>x.id!==p.id)
       let aspiracoes=[...db.aspiracoes]
-      const asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId || (a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&a.data===p.data))
+      const asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId || (a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&somarDias(a.data,8)===p.data))
       if(asp?.geradaPelaProducao){
         const restantes=producoes.filter(x=>x.clienteId===p.clienteId&&x.doadoraId===p.doadoraId&&x.data===p.data)
         if(!restantes.length)aspiracoes=aspiracoes.filter(a=>a.id!==asp.id)
@@ -285,9 +325,9 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   },[db.estoque,servico?.clienteId,servico?.touroId])
 
   return <section className="panel production-date-design">
-    <div className="panel-head"><div><h2>Produção de Embriões</h2><p>Produções organizadas por cliente e, dentro de cada cliente, por data.</p></div><button className="btn primary" onClick={()=>setManual({...novaProd})}>Nova produção</button></div>
+    <div className="panel-head"><div><h2>Produção de Embriões</h2><p>Produções organizadas por cliente e, dentro de cada cliente, por data.</p></div><button className="btn primary" onClick={()=>setManual({...novaProd,...(ultimaSessao||{})})}>Nova produção</button></div>
 
-    {filtroDashboard && <div className="dashboard-production-filter-notice"><span>{filtroDashboard.modo==='SERVICO'?`Exibindo somente a produção selecionada de ${db.clientes.find(c=>c.id===filtroDashboard.clienteId)?.nome||'cliente'} em ${filtroDashboard.data.split('-').reverse().join('/')}.`:`Exibindo somente as produções de ${filtroDashboard.mes}/${filtroDashboard.ano}.`}</span><button className="btn small" onClick={()=>setFiltroDashboard(null)}>Mostrar todas</button></div>}
+    {filtroDashboard && <div className="dashboard-production-filter-notice"><span>{filtroDashboard.modo==='SERVICO'?`Exibindo somente a produção selecionada de ${db.clientes.find(c=>c.id===filtroDashboard.clienteId)?.nome||'cliente'} em ${filtroDashboard.data.split('-').reverse().join('/')}.`:filtroDashboard.modo==='MES'?`Exibindo somente as produções de ${filtroDashboard.mes}/${filtroDashboard.ano}.`:`Exibindo somente as produções de ${filtroDashboard.ano}.`}</span><button className="btn small" onClick={()=>setFiltroDashboard(null)}>Mostrar todas</button></div>}
     <div className="toolbar donor-search-toolbar"><SearchBar value={busca} onChange={v=>{setBusca(v);if(v){setFiltroDashboard(null);setClienteAberto(null);setDataAberta(null)}}} placeholder="Pesquisar cliente, doadora, touro ou data"/></div>
 
     <div className={`donor-folders ${clienteAberto&&!busca.trim()&&!filtroDashboard?'has-open':''}`}>
@@ -308,7 +348,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
                 {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Produção de {g.data.split('-').reverse().join('/')}</strong>{!forcarAberto&&<button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button>}</div>
                 <div className="table-wrap"><table><thead><tr><th>Doadora</th><th>Raça</th><th>Touro</th><th>Raça</th><th>Oócitos totais</th><th>Viáveis</th><th>Clivados</th><th>% Cliv.</th><th>Embriões D7</th><th>% Prod.</th><th>Fresco</th><th>Cong. DT</th><th>Cong. VT</th><th>Total cong.</th><th>Ações</th></tr></thead><tbody>
                 {g.itens.map(p=>{const d=db.doadoras.find(x=>x.id===p.doadoraId);const rd=db.racas.find(x=>x.id===d?.racaId);const t=db.touros.find(x=>x.id===p.touroId);const rt=db.racas.find(x=>x.id===t?.racaId);const pctCliv=p.oocitosViaveis?Math.round((p.clivados/p.oocitosViaveis)*100)+'%':'0%';const pctProd=p.oocitosViaveis?Math.round((p.embriõesD7/p.oocitosViaveis)*100)+'%':'0%';const totalCong=n(p.congeladosDT)+n(p.congeladosVT);return <tr key={p.id}><td><strong>{d?.nome||'—'}</strong></td><td>{rd?.abreviatura||d?.raca||'—'}</td><td>{t?.nome||'—'}</td><td>{rt?.abreviatura||t?.raca||'—'}</td><td>{p.oocitos}</td><td>{p.oocitosViaveis}</td><td>{p.clivados}</td><td>{pctCliv}</td><td>{p.embriõesD7}</td><td>{pctProd}</td><td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td><td>{totalCong}</td><td><div className="actions production-row-actions"><button className="btn small order-btn" title="Mover para cima" onClick={()=>moverProducao(p,-1)}>↑</button><button className="btn small order-btn" title="Mover para baixo" onClick={()=>moverProducao(p,1)}>↓</button><button className="btn small" onClick={()=>setEdit({...p})}>Editar</button><button className="btn small" onClick={()=>setManual({...novaProd,data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,origemAspiracaoId:p.origemAspiracaoId,ordem:proximaOrdem(p.clienteId,p.data)})}>Dividir</button><button className="btn small danger" onClick={()=>excluirProducao(p)}>Excluir</button></div></td></tr>})}
-                </tbody></table></div>
+                </tbody><tfoot><tr><th>TOTAL</th><th>—</th><th>—</th><th>—</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitos),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.clivados),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)?Math.round(g.itens.reduce((s,p)=>s+n(p.clivados),0)/g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)*100)+'%':'0%'}</th><th>{g.itens.reduce((s,p)=>s+n(p.embriõesD7),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)?Math.round(g.itens.reduce((s,p)=>s+n(p.embriõesD7),0)/g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)*100)+'%':'0%'}</th><th>{g.itens.reduce((s,p)=>s+n(p.transferidosFresco),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosDT),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosVT),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosDT)+n(p.congeladosVT),0)}</th><th>—</th></tr></tfoot></table></div>
                 <section className="service-box"><div className="service-head"><strong>Sêmen utilizado no serviço</strong><button className="btn small" onClick={()=>abrirServico(g.clienteId,g.data)}>Registrar doses do serviço</button></div>{servicos.length?<div className="table-wrap service-table"><table><thead><tr><th>Touro</th><th>Raça</th><th>Partida</th><th>Doses</th><th>Ações</th></tr></thead><tbody>{servicos.map(ss=>{const t=db.touros.find(x=>x.id===ss.touroId);const r=db.racas.find(x=>x.id===t?.racaId);return <tr key={ss.id}><td><strong>{t?.nome||'—'}</strong></td><td>{r?.abreviatura||t?.raca||'—'}</td><td>{ss.partida||'—'}</td><td>{Number(ss.doses).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:2})}</td><td><div className="actions"><button className="btn small" onClick={()=>abrirServico(g.clienteId,g.data,ss)}>Editar</button><button className="btn small danger" onClick={()=>excluirServico(ss)}>Excluir</button></div></td></tr>})}</tbody></table></div>:<div className="service-empty">Nenhum sêmen registrado para este serviço.</div>}</section>
                 </div>}
               </div>
@@ -321,7 +361,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
     {manual&&<Modal title={manual.id?'Editar produção manual':'Nova produção'} onClose={()=>setManual(null)}>
       <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Data"><input type="date" value={manual.data} onChange={e=>setManual({...manual,data:e.target.value})}/></Field>
+        <Field label="Data final da produção (D7)"><input type="date" value={manual.data} onChange={e=>setManual({...manual,data:e.target.value})}/></Field>
 
         <Field label="Cliente"><SearchableSelect value={manual.clienteId} onChange={v=>setManual({...manual,clienteId:v,doadoraId:'',touroId:''})} options={db.clientes.map(c=>({value:c.id,label:c.nome,search:[c.propriedade,c.municipio,c.cpf].join(' ')}))} placeholder="Digite o nome do cliente"/></Field>
 
@@ -338,6 +378,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
         <Field label="Fresco"><input type="number" min="0" value={manual.transferidosFresco} onChange={e=>setManual({...manual,transferidosFresco:n(e.target.value)})}/></Field>
         <Field label="Congelados DT"><input type="number" min="0" value={manual.congeladosDT} onChange={e=>setManual({...manual,congeladosDT:n(e.target.value)})}/></Field>
         <Field label="Congelados VT"><input type="number" min="0" value={manual.congeladosVT} onChange={e=>setManual({...manual,congeladosVT:n(e.target.value)})}/></Field>
+        {camposOPS(manual,setManual)}
         <Field label="Observações"><input value={manual.obs||''} onChange={e=>setManual({...manual,obs:e.target.value})}/></Field>
       </div>
 
@@ -352,14 +393,15 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       <div className="readonly-box">
         <span><b>Cliente:</b> {db.clientes.find(c=>c.id===edit.clienteId)?.nome}</span>
         <span><b>Doadora:</b> {db.doadoras.find(d=>d.id===edit.doadoraId)?.nome}</span>
-        <span><b>Data:</b> {edit.data.split('-').reverse().join('/')}</span>
+        <span><b>Data final D7:</b> {edit.data.split('-').reverse().join('/')}</span>
         <span><b>Oócitos:</b> {edit.oocitos}</span>
         <span><b>Viáveis:</b> {edit.oocitosViaveis}</span>
       </div>
 
       <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Oócitos destinados"><input type="number" min="0" value={edit.oocitos} onChange={e=>setEdit({...edit,oocitos:n(e.target.value)})}/></Field>
-        <Field label="Viáveis destinados"><input type="number" min="0" value={edit.oocitosViaveis} onChange={e=>setEdit({...edit,oocitosViaveis:n(e.target.value)})}/></Field>
+        <Field label="Data final da produção (D7)"><input type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})}/></Field>
+        <Field label="Oócitos após descarte (editável)"><input type="number" min="0" value={edit.oocitos} onChange={e=>setEdit({...edit,oocitos:n(e.target.value)})}/></Field>
+        <Field label="Viáveis após descarte (editável)"><input type="number" min="0" value={edit.oocitosViaveis} onChange={e=>setEdit({...edit,oocitosViaveis:n(e.target.value)})}/></Field>
         <Field label="Desnudos / não viáveis"><input value={Math.max(0,n(edit.oocitos)-n(edit.oocitosViaveis))} readOnly /></Field>
         <Field label="Touro"><SearchableSelect value={edit.touroId||''} onChange={v=>setEdit({...edit,touroId:v})} options={tourosClienteEdit.map(t=>({value:t.id,label:t.nome,search:[t.registro,t.codigo,t.tipoSemen].join(' ')}))} placeholder="Digite o nome do touro"/></Field>
 
@@ -368,6 +410,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
         <Field label="Embriões a fresco"><input type="number" min="0" value={edit.transferidosFresco} onChange={e=>setEdit({...edit,transferidosFresco:n(e.target.value)})}/></Field>
         <Field label="Congelados DT"><input type="number" min="0" value={edit.congeladosDT} onChange={e=>setEdit({...edit,congeladosDT:n(e.target.value)})}/></Field>
         <Field label="Congelados VT"><input type="number" min="0" value={edit.congeladosVT} onChange={e=>setEdit({...edit,congeladosVT:n(e.target.value)})}/></Field>
+        {camposOPS(edit,setEdit)}
         <Field label="Observações"><input value={edit.obs||''} onChange={e=>setEdit({...edit,obs:e.target.value})}/></Field>
       </div>
 
@@ -405,11 +448,11 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
         <Field label="Doses utilizadas">
           <input
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={servico.doses}
-            onChange={e=>setServico({...servico,doses:n(e.target.value)})}
+            type="text"
+            inputMode="decimal"
+            pattern="[0-9]*[.,]?[0-9]*"
+            value={String(servico.doses).replace('.',',')}
+            onChange={e=>setServico({...servico,doses:e.target.value as any})}
           />
         </Field>
 
@@ -424,7 +467,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
       <div className="modal-actions">
         <button className="btn" onClick={()=>setServico(null)}>Cancelar</button>
-        <button className="btn primary" data-enter-final="true" onClick={()=>salvarServico(servico)}>Salvar doses do serviço</button>
+        <button className="btn primary" data-enter-final="true" onClick={()=>salvarServico({...servico,doses:n(servico.doses)})}>Salvar doses do serviço</button>
       </div>
     </Modal>}
   </section>

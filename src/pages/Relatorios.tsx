@@ -31,9 +31,11 @@ function tituloPeriodo(tipo:TipoPeriodo,valor:string){
   return valor
 }
 
-export function Relatorios({db}:{db:BancoEmbrioGestor}){
-  const[tipoPeriodo,setTipoPeriodo]=useState<TipoPeriodo>('dia')
-  const[periodo,setPeriodo]=useState(periodoPadrao('dia'))
+export function Relatorios({db,filtroPeriodo}:{db:BancoEmbrioGestor,filtroPeriodo?:{periodo:'ANO'|'MES'|'TODOS',ano:string,mes:string}}){
+  const tipoInicial:TipoPeriodo=filtroPeriodo?.periodo==='MES'?'mes':'ano'
+  const periodoInicial=filtroPeriodo?.periodo==='MES'?`${filtroPeriodo.ano}-${filtroPeriodo.mes}`:(filtroPeriodo?.ano||periodoPadrao('ano'))
+  const[tipoPeriodo,setTipoPeriodo]=useState<TipoPeriodo>(tipoInicial)
+  const[periodo,setPeriodo]=useState(periodoInicial)
   const[obsRelatorio,setObsRelatorio]=useState('')
   const[nomeClienteRelatorio,setNomeClienteRelatorio]=useState('')
   const[relatorio,setRelatorio]=useState<{clienteId:string;tipo:TipoRelatorio}|null>(null)
@@ -65,9 +67,9 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
 
   function datasUnicas(itens:{data:string}[]){return new Set(itens.map(x=>String(x.data||'').slice(0,10)).filter(Boolean)).size}
   function contagensCliente(clienteId:string){
-    const prods=db.producoes.filter(x=>x.clienteId===clienteId)
+    const prods=db.producoes.filter(x=>x.clienteId===clienteId&&noPeriodo(x.data,tipoPeriodo,periodo))
     const congelamentos=prods.filter(x=>n(x.congeladosDT)+n(x.congeladosVT)>0)
-    const transferencias=db.transferencias.filter(x=>x.clienteId===clienteId)
+    const transferencias=db.transferencias.filter(x=>x.clienteId===clienteId&&noPeriodo(x.data,tipoPeriodo,periodo))
     const temEstoque=db.estoque.some(x=>x.clienteId===clienteId)||db.estoqueEmbrioes.some(x=>x.clienteId===clienteId&&n(x.quantidade)>0)
     const producao=datasUnicas(prods), congelamento=datasUnicas(congelamentos), transferencia=datasUnicas(transferencias), estoques=temEstoque?1:0
     return {producao,congelamento,transferencia,estoques,total:producao+congelamento+transferencia+estoques}
@@ -120,6 +122,7 @@ export function Relatorios({db}:{db:BancoEmbrioGestor}){
   }
 
   function imprimir(){
+    const cliente=db.clientes.find(c=>c.id===relatorio?.clienteId);const fazenda=(nomeClienteRelatorio||cliente?.propriedade||cliente?.nome||'Fazenda').replace(/[\\/:*?"<>|]/g,'-');const data=periodo.replace(/[^0-9-]/g,'-');const tituloAnterior=document.title;document.title=`${fazenda}_${data}_${relatorio?.tipo||'Relatorio'}`;window.addEventListener('afterprint',()=>{document.title=tituloAnterior},{once:true});
     window.print()
   }
 

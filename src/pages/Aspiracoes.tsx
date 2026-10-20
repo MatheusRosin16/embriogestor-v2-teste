@@ -5,20 +5,27 @@ import { handleEnterFlow } from '../components/EnterFlow'
 
 const id=(p:string)=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)
 const hoje=()=>new Date().toISOString().slice(0,10)
+// D7 operacional: oito dias corridos após a OPU, conforme a rotina informada.
+const dataFinal=(data:string)=>{const d=new Date(data+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+8);return d.toISOString().slice(0,10)}
 const vazio:Aspiracao={id:'',data:hoje(),clienteId:'',doadoraId:'',grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,touroId:'',obs:''}
 const n=(v:any)=>Math.max(0,Number(v)||0)
 const totalAspiracao=(a:Aspiracao)=>a.geradaPelaProducao?n(a.oocitosTotaisInformados):n(a.grau1)+n(a.grau2)+n(a.grau3)+n(a.grau4)
 const viaveisAspiracao=(a:Aspiracao)=>a.geradaPelaProducao?n(a.oocitosViaveisInformados):n(a.grau1)+n(a.grau2)+n(a.grau3)
 
-export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:BancoEmbrioGestor)=>void}){
+export function Aspiracoes({db,onChange,filtroPeriodo}:{db:BancoEmbrioGestor,onChange:(db:BancoEmbrioGestor)=>void,filtroPeriodo?:{periodo:'ANO'|'MES'|'TODOS',ano:string,mes:string}}){
   const[busca,setBusca]=useState('')
   const[edit,setEdit]=useState<Aspiracao|null>(null)
+  const[sessao,setSessao]=useState<{clienteId:string,data:string,itens:Aspiracao[]}|null>(null)
+  const[ultimaSessao,setUltimaSessao]=useState<{clienteId:string,data:string}|null>(null)
   const[clienteAberto,setClienteAberto]=useState<string|null>(null)
   const[dataAberta,setDataAberta]=useState<string|null>(null)
 
   const grupos=useMemo(()=>{
     const porCliente=new Map<string,Aspiracao[]>()
     for(const a of db.aspiracoes){
+      const data=String(a.data||'').slice(0,10)
+      if(filtroPeriodo?.periodo!=='TODOS' && filtroPeriodo?.ano && data.slice(0,4)!==filtroPeriodo.ano)continue
+      if(filtroPeriodo?.periodo==='MES' && data.slice(5,7)!==filtroPeriodo.mes)continue
       const c=db.clientes.find(x=>x.id===a.clienteId)
       const d=db.doadoras.find(x=>x.id===a.doadoraId)
       const q=busca.toLowerCase()
@@ -30,23 +37,23 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
       cliente:db.clientes.find(c=>c.id===clienteId),
       itens:itens.sort((a,b)=>b.data.localeCompare(a.data))
     })).filter(g=>g.cliente).sort((a,b)=>a.cliente!.nome.localeCompare(b.cliente!.nome,'pt-BR'))
-  },[db,busca])
+  },[db,busca,filtroPeriodo])
 
   function criarOuAtualizarProducao(base:BancoEmbrioGestor,a:Aspiracao){
     const total=totalAspiracao(a)
     const viaveis=viaveisAspiracao(a)
     const existente=base.producoes.find(p=>p.origemAspiracaoId===a.id) ||
-      base.producoes.find(p=>p.clienteId===a.clienteId&&p.data===a.data&&p.doadoraId===a.doadoraId)
+      base.producoes.find(p=>p.clienteId===a.clienteId&&p.data===dataFinal(a.data)&&p.doadoraId===a.doadoraId)
 
     if(existente){
       return base.producoes.map(p=>p.id===existente.id?{
-        ...p,data:a.data,clienteId:a.clienteId,doadoraId:a.doadoraId,
+        ...p,data:p.data||dataFinal(a.data),clienteId:a.clienteId,doadoraId:a.doadoraId,
         oocitos:total,oocitosViaveis:viaveis,origemAspiracaoId:a.id
       }:p)
     }
 
     const prod:Producao={
-      id:id('PROD'),data:a.data,clienteId:a.clienteId,doadoraId:a.doadoraId,
+      id:id('PROD'),data:dataFinal(a.data),clienteId:a.clienteId,doadoraId:a.doadoraId,
       touroId:'',oocitos:total,oocitosViaveis:viaveis,clivados:0,embriõesD7:0,
       transferidosFresco:0,congeladosDT:0,congeladosVT:0,
       origemAspiracaoId:a.id,obs:''
@@ -66,7 +73,27 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
     const base={...db,aspiracoes}
     const producoes=criarOuAtualizarProducao(base,item)
     onChange({...base,producoes})
+    setUltimaSessao({clienteId:item.clienteId,data:item.data})
     setEdit(null)
+  }
+
+  function salvarSessao(){
+    if(!sessao?.clienteId||!sessao.data)return alert('Informe o cliente e a data da aspiração.')
+    if(!sessao.itens.length||sessao.itens.some(a=>!a.doadoraId))return alert('Selecione uma doadora em cada linha.')
+    let base={...db,aspiracoes:[...db.aspiracoes],producoes:[...db.producoes]}
+    for(const a of sessao.itens){
+      const item={...a,id:id('ASP'),clienteId:sessao.clienteId,data:sessao.data,grau1:n(a.grau1),grau2:n(a.grau2),grau3:n(a.grau3),grau4:n(a.grau4),grau5:n(a.grau5),geradaPelaProducao:false}
+      base.aspiracoes.push(item)
+      base={...base,producoes:criarOuAtualizarProducao(base,item)}
+    }
+    onChange(base)
+    setUltimaSessao({clienteId:sessao.clienteId,data:sessao.data})
+    setSessao(null)
+    setClienteAberto(sessao.clienteId)
+    setDataAberta(sessao.clienteId+'|'+sessao.data)
+  }
+  function abrirSessao(clienteId='',data=hoje()){
+    setSessao({clienteId,data,itens:[{...vazio,id:'',clienteId,data}]})
   }
 
   function excluir(a:Aspiracao){
@@ -81,7 +108,7 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
   const doadorasCliente=edit?db.doadoras.filter(d=>d.clienteId===edit.clienteId):[]
 
   return <section className="panel opu-date-design">
-    <div className="panel-head"><div><h2>Aspiração de Oócitos</h2><p>Aspirações organizadas por cliente e, dentro de cada cliente, por data.</p></div><button className="btn primary" onClick={()=>setEdit({...vazio})}>Nova aspiração</button></div>
+    <div className="panel-head"><div><h2>Aspiração de Oócitos</h2><p>Aspirações organizadas por cliente e, dentro de cada cliente, por data.</p></div><button className="btn primary" onClick={()=>abrirSessao(ultimaSessao?.clienteId||'',ultimaSessao?.data||hoje())}>Nova aspiração</button></div>
     <div className="toolbar donor-search-toolbar"><SearchBar value={busca} onChange={v=>{setBusca(v);if(v){setClienteAberto(null);setDataAberta(null)}}} placeholder="Pesquisar cliente, doadora ou data"/></div>
 
     <div className={`donor-folders ${clienteAberto&&!busca.trim()?'has-open':''}`}>
@@ -94,7 +121,7 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
             <span className="donor-folder-icon">▰</span><span className="donor-client-main"><strong>{g.cliente!.nome}</strong><small>{g.cliente!.propriedade||g.cliente!.municipio||'Cliente'}</small></span><span className="donor-folder-count">{datas.length} data(s)</span>
           </button>
           {aberto&&<div className="donor-open-content">
-            <div className="donor-open-head"><div><strong>{g.cliente!.nome}</strong><span>{g.itens.length} aspiração(ões) em {datas.length} data(s)</span></div><div className="actions"><button className="btn small" onClick={()=>{setClienteAberto(null);setDataAberta(null);setBusca('')}}>Voltar aos clientes</button><button className="btn primary small" onClick={()=>setEdit({...vazio,clienteId:g.cliente!.id})}>+ Nova aspiração</button></div></div>
+            <div className="donor-open-head"><div><strong>{g.cliente!.nome}</strong><span>{g.itens.length} aspiração(ões) em {datas.length} data(s)</span></div><div className="actions"><button className="btn small" onClick={()=>{setClienteAberto(null);setDataAberta(null);setBusca('')}}>Voltar aos clientes</button><button className="btn primary small" onClick={()=>abrirSessao(g.cliente!.id,ultimaSessao?.clienteId===g.cliente!.id?ultimaSessao.data:hoje())}>+ Nova aspiração</button></div></div>
             <div className="date-folder-grid">{datas.map(data=>{
               const itensData=g.itens.filter(a=>String(a.data||'').slice(0,10)===data)
               const chave=g.cliente!.id+'|'+data
@@ -102,9 +129,9 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
               return <div className={`date-folder-card ${dataOpen?'is-open':''}`} key={chave}>
                 <button className="date-folder-button" onClick={()=>setDataAberta(dataOpen?null:chave)}><span className="date-folder-icon">▰</span><span><strong>{data.split('-').reverse().join('/')}</strong><small>{itensData.length} aspiração(ões)</small></span></button>
                 {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Aspirações de {data.split('-').reverse().join('/')}</strong><button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button></div>
-                <div className="table-wrap"><table><thead><tr><th>Doadora</th><th>Raça</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th><th>Total</th><th>Viáveis</th><th>Ações</th></tr></thead><tbody>
+                <div className="table-wrap"><table><thead><tr><th>Doadora</th><th>Raça</th><th>G1</th><th>G2</th><th>G3</th><th>Desnudos</th><th>Atrésicos</th><th>Total</th><th>Viáveis</th><th>Ações</th></tr></thead><tbody>
                 {itensData.map(a=>{const d=db.doadoras.find(x=>x.id===a.doadoraId);const r=db.racas.find(x=>x.id===d?.racaId);return <tr key={a.id}><td><strong>{d?.nome}</strong>{a.geradaPelaProducao&&<small className="auto-opu-badge">Automática</small>}</td><td>{r?.abreviatura||d?.raca}</td><td>{a.grau1}</td><td>{a.grau2}</td><td>{a.grau3}</td><td>{a.grau4}</td><td>{a.grau5}</td><td><strong>{totalAspiracao(a)}</strong></td><td><strong>{viaveisAspiracao(a)}</strong></td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...a})}>Editar</button><button className="btn small danger" onClick={()=>excluir(a)}>Excluir</button></div></td></tr>})}
-                </tbody></table></div></div>}
+                </tbody><tfoot><tr><th>TOTAL DA OPU</th><th>—</th><th>{itensData.reduce((v,a)=>v+n(a.grau1),0)}</th><th>{itensData.reduce((v,a)=>v+n(a.grau2),0)}</th><th>{itensData.reduce((v,a)=>v+n(a.grau3),0)}</th><th>{itensData.reduce((v,a)=>v+n(a.grau4),0)}</th><th>{itensData.reduce((v,a)=>v+n(a.grau5),0)}</th><th>{itensData.reduce((v,a)=>v+totalAspiracao(a),0)}</th><th>{itensData.reduce((v,a)=>v+viaveisAspiracao(a),0)}</th><th>—</th></tr></tfoot></table></div></div>}
               </div>
             })}</div>
           </div>}
@@ -112,6 +139,24 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
       })}
       {!grupos.length&&<div className="note-box">Nenhuma aspiração cadastrada.</div>}
     </div>
+
+    {sessao&&<Modal title="Nova sessão de aspiração — várias doadoras" onClose={()=>setSessao(null)}>
+      <p>Informe cliente e data uma única vez. Adicione quantas doadoras precisar.</p>
+      <div className="form-grid">
+        <Field label="Data da OPU"><input type="date" value={sessao.data} onChange={e=>setSessao({...sessao,data:e.target.value})}/></Field>
+        <Field label="Cliente"><SearchableSelect value={sessao.clienteId} onChange={v=>setSessao({...sessao,clienteId:v,itens:sessao.itens.map(a=>({...a,doadoraId:''}))})} options={db.clientes.map(c=>({value:c.id,label:c.nome}))} placeholder="Selecione o cliente"/></Field>
+      </div>
+      {sessao.itens.map((a,i)=><div key={i} className="calc-box" style={{marginTop:12}}>
+        <div className="actions"><strong>Doadora {i+1}</strong><button className="btn small danger" disabled={sessao.itens.length===1} onClick={()=>setSessao({...sessao,itens:sessao.itens.filter((_,j)=>j!==i)})}>Remover</button></div>
+        <div className="form-grid">
+          <Field label="Doadora"><SearchableSelect value={a.doadoraId} onChange={v=>setSessao({...sessao,itens:sessao.itens.map((x,j)=>j===i?{...x,doadoraId:v}:x)})} options={db.doadoras.filter(d=>d.clienteId===sessao.clienteId).map(d=>({value:d.id,label:d.nome}))} placeholder="Selecione a doadora"/></Field>
+          {(['grau1','grau2','grau3','grau4','grau5'] as const).map((campo,j)=><Field key={campo} label={['G1','G2','G3','Desnudos','Atrésicos'][j]}><input type="number" min="0" value={a[campo]} onChange={e=>setSessao({...sessao,itens:sessao.itens.map((x,k)=>k===i?{...x,[campo]:n(e.target.value)}:x)})}/></Field>)}
+        </div>
+        <small>Total: {totalAspiracao(a)} | Viáveis: {viaveisAspiracao(a)}</small>
+      </div>)}
+      <div className="calc-box"><strong>Totais da sessão:</strong> {sessao.itens.reduce((v,a)=>v+totalAspiracao(a),0)} oócitos; {sessao.itens.reduce((v,a)=>v+viaveisAspiracao(a),0)} viáveis.</div>
+      <div className="modal-actions"><button className="btn" onClick={()=>setSessao({...sessao,itens:[...sessao.itens,{...vazio,id:'',clienteId:sessao.clienteId,data:sessao.data}]})}>+ Adicionar doadora</button><button className="btn primary" onClick={salvarSessao}>Salvar sessão e gerar produções D7</button></div>
+    </Modal>}
 
     {edit&&<Modal title={edit.id?'Editar aspiração':'Nova aspiração'} onClose={()=>setEdit(null)}>
       <div className="form-grid" onKeyDown={handleEnterFlow}>
@@ -121,14 +166,14 @@ export function Aspiracoes({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:Banc
         <Field label="G1"><input type="number" min="0" value={edit.grau1} onChange={e=>setEdit({...edit,grau1:n(e.target.value)})}/></Field>
         <Field label="G2"><input type="number" min="0" value={edit.grau2} onChange={e=>setEdit({...edit,grau2:n(e.target.value)})}/></Field>
         <Field label="G3"><input type="number" min="0" value={edit.grau3} onChange={e=>setEdit({...edit,grau3:n(e.target.value)})}/></Field>
-        <Field label="G4"><input type="number" min="0" value={edit.grau4} onChange={e=>setEdit({...edit,grau4:n(e.target.value)})}/></Field>
-        <Field label="G5"><input type="number" min="0" value={edit.grau5} onChange={e=>setEdit({...edit,grau5:n(e.target.value)})}/></Field>
+        <Field label="Desnudos"><input type="number" min="0" value={edit.grau4} onChange={e=>setEdit({...edit,grau4:n(e.target.value)})}/></Field>
+        <Field label="Atrésicos"><input type="number" min="0" value={edit.grau5} onChange={e=>setEdit({...edit,grau5:n(e.target.value)})}/></Field>
         <Field label="Observações"><input value={edit.obs||''} onChange={e=>setEdit({...edit,obs:e.target.value})}/></Field>
       </div>
       <div className="calc-box">{edit.geradaPelaProducao
-        ? <>OPU automática — Oócitos totais: <strong>{totalAspiracao(edit)}</strong> &nbsp; • &nbsp; Viáveis: <strong>{viaveisAspiracao(edit)}</strong> &nbsp; • &nbsp; G1–G5 permanecem 0 até classificação manual.</>
+        ? <>OPU automática — Oócitos totais: <strong>{totalAspiracao(edit)}</strong> &nbsp; • &nbsp; Viáveis: <strong>{viaveisAspiracao(edit)}</strong> &nbsp; • &nbsp; Classificações permanecem 0 até classificação manual.</>
         : <>Oócitos totais para Produção: <strong>{totalAspiracao(edit)}</strong> &nbsp; • &nbsp; Viáveis: <strong>{viaveisAspiracao(edit)}</strong></>}</div>
-      <div className="modal-actions"><button className="btn" onClick={()=>setEdit(null)}>Cancelar</button><button className="btn primary" data-enter-final="true" onClick={()=>salvar(edit)}>Salvar e gerar produção</button></div>
+      <div className="modal-actions"><button className="btn" onClick={()=>setEdit(null)}>Cancelar</button><button className="btn primary" data-enter-final="true" onClick={()=>salvar(edit)}>Salvar e gerar produção (D7)</button></div>
     </Modal>}
   </section>
 }
