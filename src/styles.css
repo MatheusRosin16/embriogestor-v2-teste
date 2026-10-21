@@ -1271,3 +1271,47 @@ body{min-width:320px}
   .legacy-report-sheet .table-wrap,.editable-table-wrap {overflow:visible!important;max-height:none!important;width:100%!important;}
   .legacy-report-sheet .legacy-footer,.editable-print-footer {position:static!important;}
 }
+/* Correções de impressão dos relatórios */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .legacy-report-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  .legacy-report-sheet table {
+    width: 100% !important;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  .legacy-report-sheet thead {
+    display: table-header-group;
+  }
+
+  .legacy-report-sheet tfoot {
+    display: table-footer-group;
+  }
+
+  .legacy-report-sheet tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .legacy-report-sheet td,
+  .legacy-report-sheet th {
+    overflow-wrap: anywhere;
+  }
+
+  .legacy-report-header,
+  .legacy-date-title,
+  .legacy-report-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+}
