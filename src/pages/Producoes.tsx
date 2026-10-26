@@ -35,36 +35,8 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   const[clienteAberto,setClienteAberto]=useState<string|null>(null)
   const[dataAberta,setDataAberta]=useState<string|null>(null)
 
-  // Repara também produções antigas que foram cadastradas sem ficha de aspiração.
-  useEffect(()=>{
-    let mudou=false
-    let aspiracoes=[...db.aspiracoes]
-    let producoes=[...db.producoes]
-    const grupos=new Map<string,Producao[]>()
-    for(const p of producoes){
-      if(!p.clienteId||!p.doadoraId||!p.data)continue
-      const k=[p.clienteId,p.doadoraId,p.data].join('|')
-      if(!grupos.has(k))grupos.set(k,[])
-      grupos.get(k)!.push(p)
-    }
-    for(const itens of grupos.values()){
-      const p=itens[0]
-      let asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId) || aspiracoes.find(a=>a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&somarDias(a.data,8)===p.data)
-      if(!asp){
-        asp={id:id('ASP'),data:somarDias(p.data,-8),clienteId:p.clienteId,doadoraId:p.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:itens.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:itens.reduce((v,x)=>v+n(x.oocitosViaveis),0),geradaPelaProducao:true,touroId:p.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
-        aspiracoes.push(asp);mudou=true
-      }else if(asp.geradaPelaProducao){
-        const total=itens.reduce((v,x)=>v+n(x.oocitos),0),viaveis=itens.reduce((v,x)=>v+n(x.oocitosViaveis),0)
-        if(n(asp.oocitosTotaisInformados)!==total||n(asp.oocitosViaveisInformados)!==viaveis){
-          aspiracoes=aspiracoes.map(a=>a.id===asp!.id?{...a,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis}:a);mudou=true
-        }
-      }
-      if(itens.some(x=>x.origemAspiracaoId!==asp!.id)){
-        const ids=new Set(itens.map(x=>x.id));producoes=producoes.map(x=>ids.has(x.id)?{...x,origemAspiracaoId:asp!.id}:x);mudou=true
-      }
-    }
-    if(mudou)onChange({...db,aspiracoes,producoes})
-  },[db.aspiracoes,db.producoes])
+  // Não cria nem modifica aspirações ao abrir a tela.
+  // O vínculo é resolvido somente quando o usuário salva uma produção.
 
   const grupos=useMemo(()=>{
     const m=new Map<string,Producao[]>()
@@ -164,15 +136,50 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
 
   function sincronizarAspiracaoDaProducao(baseAspiracoes:Aspiracao[],producoes:Producao[],item:Producao){
-    const existente=baseAspiracoes.find(a=>a.id===item.origemAspiracaoId) || baseAspiracoes.find(a=>a.clienteId===item.clienteId&&a.doadoraId===item.doadoraId&&somarDias(a.data,8)===item.data)
-    if(existente&&!existente.geradaPelaProducao)return {aspiracoes:baseAspiracoes,aspiracaoId:existente.id}
-    const relacionadas=producoes.filter(p=>p.clienteId===item.clienteId&&p.doadoraId===item.doadoraId&&p.data===item.data)
-    const total=relacionadas.reduce((s,p)=>s+n(p.oocitos),0)
-    const viaveis=relacionadas.reduce((s,p)=>s+n(p.oocitosViaveis),0)
+    const dataAspiracao=somarDias(item.data,-8)
+    // A produção criada pela OPU mantém o ID da aspiração de origem.
+    // A data de D7 pode ser diferente de OPU + 8 dias: isso NÃO invalida o vínculo.
+    const vinculada=baseAspiracoes.find(a=>
+      Boolean(item.origemAspiracaoId) &&
+      a.id===item.origemAspiracaoId &&
+      a.clienteId===item.clienteId &&
+      a.doadoraId===item.doadoraId
+    )
+    const existente=vinculada || baseAspiracoes.find(a=>
+      a.clienteId===item.clienteId &&
+      a.doadoraId===item.doadoraId &&
+      a.data===dataAspiracao
+    )
     if(existente){
-      return {aspiracoes:baseAspiracoes.map(a=>a.id===existente.id?{...a,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,touroId:a.touroId||item.touroId||''}:a),aspiracaoId:existente.id}
+      // Não altera os números de uma aspiração previamente registrada.
+      return {aspiracoes:baseAspiracoes,aspiracaoId:existente.id}
     }
-    const nova:Aspiracao={id:id('ASP'),data:somarDias(item.data,-8),clienteId:item.clienteId,doadoraId:item.doadoraId,grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,geradaPelaProducao:true,touroId:item.touroId||'',obs:'Aspiração gerada automaticamente a partir da Produção de Embriões.'}
+
+    const dataFormatada=dataAspiracao.split('-').reverse().join('/')
+    const criar=window.confirm(
+      `Não existe aspiração cadastrada para esta doadora em ${dataFormatada}.\n\n`+
+      'Deseja criar uma aspiração retroativa vinculada a esta produção?\n\n'+
+      'OK: criar a aspiração.\nCancelar: salvar somente a produção.'
+    )
+    if(!criar){
+      return {aspiracoes:baseAspiracoes,aspiracaoId:undefined}
+    }
+
+    const relacionadas=producoes.filter(p=>
+      p.clienteId===item.clienteId &&
+      p.doadoraId===item.doadoraId &&
+      p.data===item.data
+    )
+    const total=relacionadas.reduce((v,p)=>v+n(p.oocitos),0)
+    const viaveis=relacionadas.reduce((v,p)=>v+n(p.oocitosViaveis),0)
+    const nova:Aspiracao={
+      id:id('ASP'),data:dataAspiracao,
+      clienteId:item.clienteId,doadoraId:item.doadoraId,
+      grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,
+      oocitosTotaisInformados:total,oocitosViaveisInformados:viaveis,
+      geradaPelaProducao:true,touroId:item.touroId||'',
+      obs:'Aspiração retroativa criada mediante confirmação na Produção de Embriões.'
+    }
     return {aspiracoes:[...baseAspiracoes,nova],aspiracaoId:nova.id}
   }
 
@@ -215,7 +222,6 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
 
   function salvarEdicao(p:Producao){
-    const antigo=db.producoes.find(x=>x.id===p.id)
     const atualizado={...p,oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
     let estoqueEmbrioes:EstoqueEmbriaoItem[],movimentacoes:MovimentacaoItem[]
     try{({estoqueEmbrioes,movimentacoes}=atualizarEstoqueCongelado(atualizado,db.estoqueEmbrioes,db.movimentacoes))}catch(e){return alert((e as Error).message)}
@@ -223,7 +229,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     if(n(atualizado.oocitosViaveis)>n(atualizado.oocitos))return alert('Os oócitos viáveis não podem ser maiores que os oócitos totais.')
     let producoes=db.producoes.map(x=>x.id===p.id?atualizado:x)
     const sync=sincronizarAspiracaoDaProducao(db.aspiracoes,producoes,atualizado)
-    producoes=producoes.map(x=>x.id===atualizado.id?{...x,origemAspiracaoId:x.origemAspiracaoId||sync.aspiracaoId}:x)
+    producoes=producoes.map(x=>x.id===atualizado.id?{...x,origemAspiracaoId:sync.aspiracaoId}:x)
     const transferencias=sincronizarTransferenciasFresco(db.transferencias,atualizado,atualizado.transferidosFresco)
     onChange({...db,aspiracoes:sync.aspiracoes,producoes,estoqueEmbrioes,movimentacoes,transferencias});setEdit(null)
   }
@@ -235,7 +241,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     const item:Producao={...p,id:p.id||id('PROD'),ordem:p.ordem||proximaOrdem(p.clienteId,p.data),oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
     let producoes=p.id?db.producoes.map(x=>x.id===p.id?item:x):[...db.producoes,item]
     const sync=sincronizarAspiracaoDaProducao(db.aspiracoes,producoes,item)
-    const itemVinculado={...item,origemAspiracaoId:item.origemAspiracaoId||sync.aspiracaoId}
+    const itemVinculado={...item,origemAspiracaoId:sync.aspiracaoId}
     producoes=producoes.map(x=>x.id===item.id?itemVinculado:x)
     const transferencias=sincronizarTransferenciasFresco(db.transferencias,itemVinculado,itemVinculado.transferidosFresco)
     let estoqueEmbrioes:EstoqueEmbriaoItem[],movimentacoes:MovimentacaoItem[]
@@ -248,16 +254,10 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
 
   function excluirProducao(p:Producao){
-    if(confirm('Excluir esta produção?')){
+    if(confirm('Excluir esta produção? A aspiração vinculada será preservada.')){
       const producoes=db.producoes.filter(x=>x.id!==p.id)
-      let aspiracoes=[...db.aspiracoes]
-      const asp=aspiracoes.find(a=>a.id===p.origemAspiracaoId || (a.clienteId===p.clienteId&&a.doadoraId===p.doadoraId&&somarDias(a.data,8)===p.data))
-      if(asp?.geradaPelaProducao){
-        const restantes=producoes.filter(x=>x.clienteId===p.clienteId&&x.doadoraId===p.doadoraId&&x.data===p.data)
-        if(!restantes.length)aspiracoes=aspiracoes.filter(a=>a.id!==asp.id)
-        else aspiracoes=aspiracoes.map(a=>a.id===asp.id?{...a,oocitosTotaisInformados:restantes.reduce((v,x)=>v+n(x.oocitos),0),oocitosViaveisInformados:restantes.reduce((v,x)=>v+n(x.oocitosViaveis),0)}:a)
-      }
-      onChange({...db,aspiracoes,producoes})
+      // Nunca exclui aspirações automaticamente ao excluir uma produção.
+      onChange({...db,producoes})
     }
   }
 
@@ -472,3 +472,4 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     </Modal>}
   </section>
 }
+

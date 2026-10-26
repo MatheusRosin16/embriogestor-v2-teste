@@ -83,28 +83,16 @@ function Sistema({perfil}:{perfil:PerfilAcesso}){
     salvarBanco(novo,true)
   }
 
-  function completarAspiracoesAntigas(banco:BancoEmbrioGestor){
-    let alterado=false
-    const aspiracoes=[...banco.aspiracoes]
-    for(const prod of banco.producoes){
-      const existe=aspiracoes.some(a=>a.clienteId===prod.clienteId&&a.doadoraId===prod.doadoraId&&a.data===prod.data)
-      if(existe)continue
-      aspiracoes.push({
-        id:`ASP_MIG_${prod.id}`,
-        data:prod.data,
-        clienteId:prod.clienteId,
-        doadoraId:prod.doadoraId,
-        grau1:0,grau2:0,grau3:0,grau4:0,grau5:0,
-        oocitosTotaisInformados:Number(prod.oocitos)||0,
-        oocitosViaveisInformados:Number(prod.oocitosViaveis)||0,
-        geradaPelaProducao:true,
-        touroId:prod.touroId||'',
-        obs:'Aspiração gerada automaticamente a partir de produção já existente.'
-      })
-      alterado=true
-    }
-    return alterado?{...banco,aspiracoes}:banco
-  }
+function completarAspiracoesAntigas(banco: BancoEmbrioGestor): BancoEmbrioGestor {
+  // Não criar aspirações automaticamente ao abrir o sistema
+  // ou ao receber dados da nuvem.
+  //
+  // As aspirações existentes são preservadas.
+  // Novas aspirações originadas de produções antigas
+  // deverão exigir confirmação do usuário.
+
+  return banco
+}
 
   function aplicarRemoto(novo:BancoEmbrioGestor){
     if(novo.identidadeEmpresa){
