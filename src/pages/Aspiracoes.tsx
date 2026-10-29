@@ -39,19 +39,35 @@ export function Aspiracoes({db,onChange,filtroPeriodo}:{db:BancoEmbrioGestor,onC
     })).filter(g=>g.cliente).sort((a,b)=>a.cliente!.nome.localeCompare(b.cliente!.nome,'pt-BR'))
   },[db,busca,filtroPeriodo])
 
+  // A OPU é o registro original dos oócitos. A divisão entre touros
+  // acontece somente nas produções e nunca altera os números da aspiração.
   function criarOuAtualizarProducao(base:BancoEmbrioGestor,a:Aspiracao){
     const total=totalAspiracao(a)
     const viaveis=viaveisAspiracao(a)
-    const existente=base.producoes.find(p=>p.origemAspiracaoId===a.id) ||
-      base.producoes.find(p=>p.clienteId===a.clienteId&&p.data===dataFinal(a.data)&&p.doadoraId===a.doadoraId)
 
-    if(existente){
-      return base.producoes.map(p=>p.id===existente.id?{
-        ...p,data:p.data||dataFinal(a.data),clienteId:a.clienteId,doadoraId:a.doadoraId,
-        oocitos:total,oocitosViaveis:viaveis,origemAspiracaoId:a.id
-      }:p)
+    // Todas as linhas divididas continuam vinculadas à mesma OPU.
+    const vinculadas=base.producoes.filter(p=>p.origemAspiracaoId===a.id)
+    if(vinculadas.length>0){
+      // Não redistribuir oócitos automaticamente: isso apagaria a divisão
+      // realizada na Produção e poderia alterar os valores das linhas.
+      return base.producoes
     }
 
+    // Compatibilidade com produções antigas sem ID de origem.
+    const correspondente=base.producoes.find(p=>
+      !p.origemAspiracaoId &&
+      p.clienteId===a.clienteId &&
+      p.doadoraId===a.doadoraId &&
+      p.data===dataFinal(a.data)
+    )
+    if(correspondente){
+      return base.producoes.map(p=>p.id===correspondente.id
+        ? {...p,origemAspiracaoId:a.id}
+        : p
+      )
+    }
+
+    // Somente uma OPU ainda sem produção gera a primeira linha D7.
     const prod:Producao={
       id:id('PROD'),data:dataFinal(a.data),clienteId:a.clienteId,doadoraId:a.doadoraId,
       touroId:'',oocitos:total,oocitosViaveis:viaveis,clivados:0,embriõesD7:0,
