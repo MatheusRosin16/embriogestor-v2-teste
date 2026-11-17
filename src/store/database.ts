@@ -114,7 +114,7 @@ export function bancoVazio():BancoEmbrioGestor{
     versao:2,clientes:[],fazendas:[],doadoras:[],touros:[],
     racas:[...RACAS_PADRAO],profissionais:[],usuarios:[],estoque:[],
     movimentacoes:[],estoqueEmbrioes:[],aspiracoes:[],producoes:[],
-    transferencias:[],congelamentos:[],servicosSemen:[],custosProducao:[],materiaisLaboratorio:MATERIAIS_LAB_PADRAO.map(x=>({...x})),notasFiscais:[],consumosInsumos:[],relatoriosTransferenciaEditaveis:[],
+    transferencias:[],congelamentos:[],servicosSemen:[],custosProducao:[],materiaisLaboratorio:MATERIAIS_LAB_PADRAO.map(x=>({...x})),notasFiscais:[],consumosInsumos:[],receitasMeios:[],relatoriosTransferenciaEditaveis:[],
     identidadeEmpresa:{nome:'SÊMINNA – Laboratório de Reprodução Animal',nomeFantasia:'SÊMINNA',endereco:'AV. General Osório, 797, sala 01, Francisco Beltrão - PR'}
   }
 }
@@ -154,7 +154,7 @@ export function normalizar(data:any):BancoEmbrioGestor{
   const listas=[
     'clientes','fazendas','doadoras','touros','profissionais','usuarios','estoque',
     'movimentacoes','estoqueEmbrioes','aspiracoes','producoes','transferencias',
-    'congelamentos','servicosSemen','custosProducao','materiaisLaboratorio','notasFiscais','consumosInsumos','relatoriosTransferenciaEditaveis'
+    'congelamentos','servicosSemen','custosProducao','materiaisLaboratorio','notasFiscais','consumosInsumos','receitasMeios','relatoriosTransferenciaEditaveis'
   ]
   for(const k of listas){
     if(Array.isArray(data?.[k])) (base as any)[k]=data[k]

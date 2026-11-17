@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor, Doadora } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
@@ -51,7 +52,7 @@ export function Doadoras({db,onChange}:{db:BancoEmbrioGestor,onChange:(db:BancoE
         <Field label="Registro"><input value={edit.registro||''} onChange={e=>setEdit({...edit,registro:e.target.value})}/></Field>
         <Field label="Raça"><select value={edit.racaId||''} onChange={e=>setEdit({...edit,racaId:e.target.value})}><option value="">Selecione...</option>{db.racas.map(r=><option key={r.id} value={r.id}>{r.abreviatura} — {r.nome}</option>)}</select></Field>
         <Field label="Categoria"><input value={edit.categoria||''} onChange={e=>setEdit({...edit,categoria:e.target.value})}/></Field>
-        <Field label="Nascimento"><input type="date" value={edit.nascimento||''} onChange={e=>setEdit({...edit,nascimento:e.target.value})}/></Field>
+        <Field label="Nascimento"><ClearableDateInput type="date" value={edit.nascimento||''} onChange={e=>setEdit({...edit,nascimento:e.target.value})}/></Field>
         <Field label="Status"><select value={edit.status||'Ativo'} onChange={e=>setEdit({...edit,status:e.target.value as any})}><option>Ativo</option><option>Inativo</option></select></Field>
         <Field label="Observações"><input value={edit.obs||''} onChange={e=>setEdit({...edit,obs:e.target.value})}/></Field>
       </div>

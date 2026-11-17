@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor } from '../types/domain'
 import { Modal, SearchBar } from '../components/CrudUI'
@@ -99,11 +100,11 @@ export function Relatorios({db,filtroPeriodo}:{db:BancoEmbrioGestor,filtroPeriod
     const extras:any[]=[]
     prods.forEach(p=>{
       const desejado=n(p.transferidosFresco)
-      const existentes=tes.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&t.geradaPelaProducao).length
+      const existentes=tes.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco').length
       for(let i=existentes;i<desejado;i++)extras.push({
         id:`REL_AUTO_${p.id}_${i}`,data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,touroId:p.touroId||'',
         origemProducaoId:p.id,receptora:'',embriãoEstagio:'',embriãoGrau:'',ovarioCL:'',destino:'Fresco',diagnostico:'',
-        obs:'Transferência a fresco originada da Produção.',geradaPelaProducao:true
+        obs:'',geradaPelaProducao:true
       })
     })
     tes=[...tes,...extras].sort((a,b)=>{
@@ -166,18 +167,17 @@ export function Relatorios({db,filtroPeriodo}:{db:BancoEmbrioGestor,filtroPeriod
             <table className="legacy-table"><thead><tr>
               <th>Nº</th><th>DOADORA</th><th>RAÇA</th><th>TOURO</th><th>RAÇA</th>
               <th>OÓCITOS TOTAIS</th><th>OÓCITOS VIÁVEIS</th><th>CLIVAGEM</th><th>%CLIV</th>
-              <th>EMB. VIÁVEIS D7</th><th>%PROD</th><th>FRESCO</th><th>DT</th><th>VT</th>
+              <th>EMB. VIÁVEIS D7</th><th>%PROD</th><th>FRESCO</th><th>DT</th><th>VT</th><th>OBSERVAÇÕES</th>
             </tr></thead><tbody>
               {itens.map((p,i)=><tr key={p.id}>
                 <td>{i+1}</td><td>{doadora(p.doadoraId)?.nome}</td><td>{racaD(p.doadoraId)}</td>
                 <td>{touro(p.touroId)?.nome||''}</td><td>{racaT(p.touroId)}</td>
                 <td>{p.oocitos}</td><td>{p.oocitosViaveis}</td><td>{p.clivados}</td><td>{pct(n(p.clivados),n(p.oocitosViaveis))}</td>
                 <td>{p.embriõesD7}</td><td>{pct(n(p.embriõesD7),n(p.oocitosViaveis))}</td>
-                <td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td>
+                <td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td><td>{p.obs||''}</td>
               </tr>)}
-              <tr className="legacy-total"><td colSpan={5}>TOTAL DO DIA</td><td>{t.o}</td><td>{t.v}</td><td>{t.c}</td><td>{pct(t.c,t.v)}</td><td>{t.e}</td><td>{pct(t.e,t.v)}</td><td>{t.f}</td><td>{t.dt}</td><td>{t.vt}</td></tr>
+              <tr className="legacy-total"><td colSpan={5}>TOTAL DO DIA</td><td>{t.o}</td><td>{t.v}</td><td>{t.c}</td><td>{pct(t.c,t.v)}</td><td>{t.e}</td><td>{pct(t.e,t.v)}</td><td>{t.f}</td><td>{t.dt}</td><td>{t.vt}</td><td></td></tr>
             </tbody></table>
-            {itens.some(x=>x.obs)&&<div className="legacy-note"><b>OBS:</b> {[...new Set(itens.map(x=>x.obs).filter(Boolean))].join(' | ')}</div>}
             {!!semen.length&&<div className="legacy-semen">
               <b>SÊMEN UTILIZADO NO SERVIÇO</b>
               <table className="legacy-table small"><thead><tr><th>TOURO</th><th>RAÇA</th><th>PARTIDA</th><th>DOSES</th><th>TIPO DE SÊMEN</th><th>PRODUÇÃO % (EMBRIÕES/OÓCITOS VIÁVEIS)</th></tr></thead>
@@ -222,10 +222,9 @@ export function Relatorios({db,filtroPeriodo}:{db:BancoEmbrioGestor,filtroPeriod
         {grupos.map(([data,itens])=>{
           const p=itens.filter(diagOk).length,v=itens.filter(diagNeg).length,av=p+v
           return <div key={data}><div className="legacy-date-title">DATA: {br(data)}</div>
-          <table className="legacy-table"><thead><tr><th>Nº</th><th>DOADORA</th><th>RAÇA DOADORA</th><th>TOURO</th><th>RAÇA TOURO</th><th>ESTÁGIO D7</th><th>GRAU D7</th><th>RECEPTORA</th><th>OVÁRIO + CL</th><th>EMBRIÃO</th><th>DIAGNÓSTICO</th></tr></thead>
-          <tbody>{itens.map((t,i)=><tr key={t.id}><td>{i+1}</td><td>{doadora(t.doadoraId)?.nome}</td><td>{racaD(t.doadoraId)}</td><td>{touro(t.touroId)?.nome}</td><td>{racaT(t.touroId)}</td><td>{t.embriãoEstagio}</td><td>{t.embriãoGrau}</td><td>{t.receptora}</td><td>{t.ovarioCL}</td><td>{t.destino==='Fresco'?'FRESCO':t.destino}</td><td>{t.diagnostico||'Pendente'}</td></tr>)}</tbody></table>
+          <table className="legacy-table"><thead><tr><th>Nº</th><th>DOADORA</th><th>RAÇA DOADORA</th><th>TOURO</th><th>RAÇA TOURO</th><th>ESTÁGIO D7</th><th>GRAU D7</th><th>RECEPTORA</th><th>OVÁRIO + CL</th><th>EMBRIÃO</th><th>DIAGNÓSTICO</th><th>OBSERVAÇÕES</th></tr></thead>
+          <tbody>{itens.map((t,i)=><tr key={t.id}><td>{i+1}</td><td>{doadora(t.doadoraId)?.nome}</td><td>{racaD(t.doadoraId)}</td><td>{touro(t.touroId)?.nome}</td><td>{racaT(t.touroId)}</td><td>{t.embriãoEstagio}</td><td>{t.embriãoGrau}</td><td>{t.receptora}</td><td>{t.ovarioCL}</td><td>{t.destino==='Fresco'?'FRESCO':t.destino}</td><td>{t.diagnostico||'Pendente'}</td><td>{/^Transferência gerada automaticamente|^Transferência a fresco originada da Produção/i.test(t.obs||'')?'':t.obs||''}</td></tr>)}</tbody></table>
           <table className="legacy-table legacy-summary"><tbody><tr><th>TOTAL</th><th>PRENHAS</th><th>VAZIAS</th><th>% PRENHEZ</th></tr><tr><td>{itens.length}</td><td>{p}</td><td>{v}</td><td>{pct(p,av)}</td></tr></tbody></table>
-          {itens.some(x=>x.obs)&&<div className="legacy-note"><b>OBSERVAÇÕES:</b> {[...new Set(itens.map(x=>x.obs).filter(Boolean))].join(' | ')}</div>}
           </div>
         })}
         {!!dados.tes.length&&<div className="legacy-grand"><b>TOTAL DO PERÍODO:</b> {dados.tes.length} transferências | {prenhes} prenhas | {vazias} vazias | {pct(prenhes,avaliadas)} prenhez</div>}
@@ -271,7 +270,7 @@ export function Relatorios({db,filtroPeriodo}:{db:BancoEmbrioGestor,filtroPeriod
 
       <div className="legacy-filter-row report-period-controls">
         <label><span>Tipo de período</span><select value={tipoPeriodo} onChange={e=>mudarTipo(e.target.value as TipoPeriodo)}><option value="dia">Dia</option><option value="mes">Mês</option><option value="ano">Ano</option></select></label>
-        <label><span>Período</span>{tipoPeriodo==='dia'&&<input type="date" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>} {tipoPeriodo==='mes'&&<input type="month" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>} {tipoPeriodo==='ano'&&<input type="number" min="2000" max="2100" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>}</label>
+        <label><span>Período</span>{tipoPeriodo==='dia'&&<ClearableDateInput type="date" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>} {tipoPeriodo==='mes'&&<ClearableDateInput type="month" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>} {tipoPeriodo==='ano'&&<input type="number" min="2000" max="2100" value={periodo} onChange={e=>setPeriodo(e.target.value)}/>}</label>
         <label className="legacy-obs"><span>Observação do relatório (opcional)</span><input value={obsRelatorio} onChange={e=>setObsRelatorio(e.target.value)} placeholder="Texto que aparecerá no relatório gerado."/></label>
       </div>
 

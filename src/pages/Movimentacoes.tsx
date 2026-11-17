@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor } from '../types/domain'
 import { SearchBar } from '../components/CrudUI'
@@ -52,8 +53,8 @@ export function Movimentacoes({db}:{db:BancoEmbrioGestor}){
     <label>Touro<select value={touroId} onChange={e=>{setTouroId(e.target.value);setPartida('')}}><option value="">Todos</option>{tourosFiltro.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR')).map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}</select></label>
     <label>Partida<select value={partida} onChange={e=>setPartida(e.target.value)}><option value="">Todas</option>{partidas.map(p=><option key={p} value={p}>{p}</option>)}</select></label>
     <label>Tipo<select value={tipo} onChange={e=>setTipo(e.target.value)}><option value="">Todos</option><option value="ENTRADA_SEMEN">Entrada de sêmen</option><option value="SAIDA_SEMEN">Saída de sêmen</option><option value="ENTRADA_EMBRIAO">Entrada de embriões</option><option value="SAIDA_EMBRIAO">Saída de embriões</option><option value="AJUSTE">Ajuste</option></select></label>
-    <label>Data inicial<input type="date" value={dataIni} onChange={e=>setDataIni(e.target.value)}/></label>
-    <label>Data final<input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></label>
+    <label>Data inicial<ClearableDateInput type="date" value={dataIni} onChange={e=>setDataIni(e.target.value)}/></label>
+    <label>Data final<ClearableDateInput type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)}/></label>
    </div>
    <div className="calc-box">{lista.length} movimentação(ões) encontrada(s) • Entradas de sêmen: <strong>{totalEntradas.toLocaleString('pt-BR')}</strong> • Saídas de sêmen: <strong>{totalSaidas.toLocaleString('pt-BR')}</strong></div>
    <div className="table-wrap"><table><thead><tr><th>Data/Hora</th><th>Tipo</th><th>Cliente</th><th>Touro</th><th>Partida</th><th>Doadora</th><th>Quantidade</th><th>Descrição</th></tr></thead><tbody>{lista.length?lista.map(m=>{const c=db.clientes.find(x=>x.id===m.clienteId),t=db.touros.find(x=>x.id===m.touroId),d=db.doadoras.find(x=>x.id===m.doadoraId),dt=new Date(m.data);return <tr key={m.id}><td>{isNaN(dt.getTime())?m.data:dt.toLocaleString('pt-BR')}</td><td><strong>{tipoNome(m.tipo)}</strong></td><td>{c?.nome||'—'}</td><td>{t?.nome||'—'}</td><td>{partidaMov(m)||'—'}</td><td>{d?.nome||'—'}</td><td>{m.quantidade}</td><td>{m.descricao}</td></tr>}):<tr><td colSpan={8}>Nenhuma movimentação encontrada com estes filtros.</td></tr>}</tbody></table></div>

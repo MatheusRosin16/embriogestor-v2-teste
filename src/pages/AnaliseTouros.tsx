@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor } from '../types/domain'
 import { SearchBar } from '../components/CrudUI'
@@ -100,8 +101,8 @@ export function AnaliseTouros({db}:{db:BancoEmbrioGestor}){
 
     <div className="panel">
       <div className="analysis-filters">
-        <label><span>Data inicial</span><input type="date" value={inicio} onChange={e=>setInicio(e.target.value)}/></label>
-        <label><span>Data final</span><input type="date" value={fim} onChange={e=>setFim(e.target.value)}/></label>
+        <label><span>Data inicial</span><ClearableDateInput type="date" value={inicio} onChange={e=>setInicio(e.target.value)}/></label>
+        <label><span>Data final</span><ClearableDateInput type="date" value={fim} onChange={e=>setFim(e.target.value)}/></label>
         <div><SearchBar value={busca} onChange={setBusca} placeholder="Pesquisar touro, partida ou raça"/></div>
       </div>
 

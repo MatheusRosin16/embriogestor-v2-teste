@@ -305,6 +305,20 @@ export interface IdentidadeEmpresa {
   logoDataUrl?: string
 }
 
+export interface IngredienteReceitaMeio {
+  id: string
+  materialId: string
+  quantidade: number
+}
+
+export interface ReceitaMeioLaboratorio {
+  id: string
+  produto: string
+  volumeFinal: number
+  unidade: 'mL'
+  ingredientes: IngredienteReceitaMeio[]
+}
+
 export interface BancoEmbrioGestor {
   versao: number
   clientes: Cliente[]
@@ -324,6 +338,7 @@ export interface BancoEmbrioGestor {
   servicosSemen: ServicoSemen[]
   custosProducao: CustoProducao[]
   materiaisLaboratorio: MaterialLaboratorio[]
+  receitasMeios: ReceitaMeioLaboratorio[]
   notasFiscais: NotaFiscalCompra[]
   consumosInsumos: ConsumoInsumo[]
   relatoriosTransferenciaEditaveis?: RelatorioTransferenciaEditavelSalvo[]

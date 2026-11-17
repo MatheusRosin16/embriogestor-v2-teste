@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type {
   BancoEmbrioGestor,
@@ -563,7 +564,7 @@ export function DigitalizarFichaTransferencia({
           <label>
             <span>Data da transferência</span>
 
-            <input
+            <ClearableDateInput
               type="date"
               value={dataTE}
               onChange={e =>

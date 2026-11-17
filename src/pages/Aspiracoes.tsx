@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { Aspiracao, BancoEmbrioGestor, Producao } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
@@ -159,7 +160,7 @@ export function Aspiracoes({db,onChange,filtroPeriodo}:{db:BancoEmbrioGestor,onC
     {sessao&&<Modal title="Nova sessão de aspiração — várias doadoras" onClose={()=>setSessao(null)}>
       <p>Informe cliente e data uma única vez. Adicione quantas doadoras precisar.</p>
       <div className="form-grid">
-        <Field label="Data da OPU"><input type="date" value={sessao.data} onChange={e=>setSessao({...sessao,data:e.target.value})}/></Field>
+        <Field label="Data da OPU"><ClearableDateInput type="date" value={sessao.data} onChange={e=>setSessao({...sessao,data:e.target.value})}/></Field>
         <Field label="Cliente"><SearchableSelect value={sessao.clienteId} onChange={v=>setSessao({...sessao,clienteId:v,itens:sessao.itens.map(a=>({...a,doadoraId:''}))})} options={db.clientes.map(c=>({value:c.id,label:c.nome}))} placeholder="Selecione o cliente"/></Field>
       </div>
       {sessao.itens.map((a,i)=><div key={i} className="calc-box" style={{marginTop:12}}>
@@ -176,7 +177,7 @@ export function Aspiracoes({db,onChange,filtroPeriodo}:{db:BancoEmbrioGestor,onC
 
     {edit&&<Modal title={edit.id?'Editar aspiração':'Nova aspiração'} onClose={()=>setEdit(null)}>
       <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Data"><input type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})}/></Field>
+        <Field label="Data"><ClearableDateInput type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})}/></Field>
         <Field label="Cliente"><SearchableSelect value={edit.clienteId} onChange={v=>setEdit({...edit,clienteId:v,doadoraId:''})} options={db.clientes.map(c=>({value:c.id,label:c.nome,search:[c.propriedade,c.municipio,c.cpf].join(' ')}))} placeholder="Digite o nome do cliente"/></Field>
         <Field label="Doadora"><SearchableSelect value={edit.doadoraId} onChange={v=>setEdit({...edit,doadoraId:v})} options={doadorasCliente.map(d=>({value:d.id,label:d.nome,search:[d.registro,d.raca,d.categoria].join(' ')}))} placeholder="Digite o número/nome da doadora"/></Field>
         <Field label="G1"><input type="number" min="0" value={edit.grau1} onChange={e=>setEdit({...edit,grau1:n(e.target.value)})}/></Field>

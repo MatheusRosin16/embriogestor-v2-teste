@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useEffect, useMemo, useState } from 'react'
 import type { BancoEmbrioGestor, Producao, Aspiracao, ServicoSemen, MovimentacaoItem, EstoqueEmbriaoItem, Transferencia } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
@@ -87,7 +88,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
   function sincronizarTransferenciasFresco(transferencias:Transferencia[],p:Producao,quantidade:number){
     const desejado=n(quantidade)
-    const existentes=transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&t.geradaPelaProducao)
+    const existentes=transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco')
     let resultado=[...transferencias]
     if(existentes.length<desejado){
       const faltam=desejado-existentes.length
@@ -96,7 +97,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
           id:id('TEAUTO'),data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,touroId:p.touroId||'',
           origemProducaoId:p.id,usarDoadoraOutroProdutor:false,receptora:'',embriãoEstagio:'',
           embriãoGrau:'',ovarioCL:'',destino:'Fresco',diagnostico:'',dataDiagnostico:'',
-          profissionalId:'',obs:'Transferência gerada automaticamente a partir de embrião a fresco na Produção.',
+          profissionalId:'',obs:'',
           geradaPelaProducao:true
         })
       }
@@ -104,7 +105,10 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       const remover=new Set(existentes.slice(desejado).map(t=>t.id))
       resultado=resultado.filter(t=>!remover.has(t.id))
     }
-    return resultado
+    // Atualiza somente transferências a fresco vinculadas à produção, sem apagar edições individuais.
+    return resultado.map(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'
+      ? {...t,data:p.data,obs:t.obs==='Transferência gerada automaticamente a partir de embrião a fresco na Produção.'?'':t.obs}
+      : t)
   }
 
   // Garante também para dados antigos que todo embrião a fresco tenha sua linha de transferência/relatório.
@@ -113,11 +117,43 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
     let mudou=false
     for(const p of db.producoes){
       const qtd=n(p.transferidosFresco)
-      const atual=transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&t.geradaPelaProducao).length
-      if(atual!==qtd){transferencias=sincronizarTransferenciasFresco(transferencias,p,qtd);mudou=true}
+      const atual=transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco').length
+      const desatualizada=transferencias.some(t=>t.origemProducaoId===p.id&&t.destino==='Fresco'&&(t.data!==p.data||t.obs==='Transferência gerada automaticamente a partir de embrião a fresco na Produção.'))
+      if(atual!==qtd||desatualizada){transferencias=sincronizarTransferenciasFresco(transferencias,p,qtd);mudou=true}
     }
     if(mudou)onChange({...db,transferencias})
   },[db.producoes,db.transferencias])
+
+  // Reconciliação conservadora de transferências antigas que perderam o vínculo.
+  // Só permite correção quando há uma correspondência única por doadora/touro,
+  // a quantidade coincide exatamente e todas as linhas estão na mesma data antiga.
+  function corrigirDatasFrescoLegado(clienteId:string,dataNova:string){
+    const ps=db.producoes.filter(p=>p.clienteId===clienteId&&p.data===dataNova&&n(p.transferidosFresco)>0)
+    if(!ps.length)return alert('Não há embriões a fresco nesta produção.')
+    const alteracoes=new Map<string,string>()
+    const vinculos=new Map<string,string>()
+    const avisos:string[]=[]
+    for(const p of ps){
+      const jaVinculadas=db.transferencias.filter(t=>t.origemProducaoId===p.id&&t.destino==='Fresco')
+      if(jaVinculadas.length){
+        jaVinculadas.forEach(t=>{if(t.data!==dataNova){alteracoes.set(t.id,dataNova);vinculos.set(t.id,p.id)}})
+        continue
+      }
+      const outrasProducoes=db.producoes.filter(x=>x.id!==p.id&&x.clienteId===p.clienteId&&x.doadoraId===p.doadoraId&&x.touroId===p.touroId&&n(x.transferidosFresco)>0)
+      if(outrasProducoes.length){avisos.push('Há outras produções com a mesma doadora e touro; vínculo ambíguo.');continue}
+      const candidatas=db.transferencias.filter(t=>t.clienteId===p.clienteId&&t.doadoraId===p.doadoraId&&t.touroId===p.touroId&&t.destino==='Fresco'&&!t.origemProducaoId&&t.data!==dataNova)
+      const datas=[...new Set(candidatas.map(t=>t.data))]
+      if(candidatas.length===n(p.transferidosFresco)&&datas.length===1){
+        candidatas.forEach(t=>{alteracoes.set(t.id,dataNova);vinculos.set(t.id,p.id)})
+      }else avisos.push('Uma doadora não apresentou correspondência única de quantidade e data; nenhum registro dela será alterado.')
+    }
+    if(!alteracoes.size)return alert('Não encontrei transferências antigas com correspondência segura. Nenhum registro foi alterado. '+avisos.join(' '))
+    const datasAntigas=[...new Set(db.transferencias.filter(t=>alteracoes.has(t.id)).map(t=>t.data))]
+    if(!window.confirm(`Foram identificadas ${alteracoes.size} transferências a fresco para atualizar de ${datasAntigas.join(', ')} para ${dataNova}.\n\nA operação preserva receptora, estágio, grau, CL e observações, e vincula os registros à produção.\n\n${avisos.join(' ')}\n\nConfirma a correção?`))return
+    const transferencias=db.transferencias.map(t=>alteracoes.has(t.id)?{...t,data:alteracoes.get(t.id)!,origemProducaoId:vinculos.get(t.id)!,geradaPelaProducao:true}:t)
+    onChange({...db,transferencias})
+    alert(`${alteracoes.size} transferência(s) atualizada(s). ${avisos.join(' ')}`)
+  }
 
   function proximaOrdem(clienteId:string,data:string){
     const itens=db.producoes.filter(p=>p.clienteId===clienteId&&String(p.data||'').slice(0,10)===String(data||'').slice(0,10))
@@ -222,6 +258,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
   }
 
   function salvarEdicao(p:Producao){
+    if(!p.data)return alert('Informe a data final da produção (D7).')
     const atualizado={...p,oocitos:n(p.oocitos),oocitosViaveis:n(p.oocitosViaveis),clivados:n(p.clivados),embriõesD7:n(p.embriõesD7),transferidosFresco:n(p.transferidosFresco),congeladosDT:n(p.congeladosDT),congeladosVT:n(p.congeladosVT)}
     let estoqueEmbrioes:EstoqueEmbriaoItem[],movimentacoes:MovimentacaoItem[]
     try{({estoqueEmbrioes,movimentacoes}=atualizarEstoqueCongelado(atualizado,db.estoqueEmbrioes,db.movimentacoes))}catch(e){return alert((e as Error).message)}
@@ -332,8 +369,8 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
     <div className={`donor-folders ${clienteAberto&&!busca.trim()&&!filtroDashboard?'has-open':''}`}>
       {clientesGrupos.map(cg=>{
-        const forcarAberto=!!filtroDashboard
-        const aberto=forcarAberto?true:clienteAberto===cg.clienteId
+        const forcarAberto=false
+        const aberto=clienteAberto===cg.clienteId
         if(clienteAberto&&!forcarAberto&&!aberto)return null
         return <div className={`donor-client-card ${aberto?'is-open':''}`} key={cg.clienteId}>
           <button type="button" className="donor-client-button" onClick={()=>{if(!forcarAberto){setClienteAberto(aberto?null:cg.clienteId);setDataAberta(null);if(!aberto)setBusca('')}}}><span className="donor-folder-icon">▰</span><span className="donor-client-main"><strong>{cg.cliente?.nome}</strong><small>{cg.cliente?.propriedade||cg.cliente?.municipio||'Cliente'}</small></span><span className="donor-folder-count">{cg.datas.length} data(s)</span></button>
@@ -342,10 +379,10 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
             <div className="date-folder-grid">{cg.datas.map(g=>{
               const servicos=db.servicosSemen.filter(x=>x.clienteId===g.clienteId&&String(x.data||'').slice(0,10)===g.data)
               const chave=g.clienteId+'|'+g.data
-              const dataOpen=forcarAberto?true:dataAberta===chave
+              const dataOpen=dataAberta===chave
               return <div className={`date-folder-card ${dataOpen?'is-open':''}`} key={chave}>
                 <button className="date-folder-button" onClick={()=>{if(!forcarAberto)setDataAberta(dataOpen?null:chave)}}><span className="date-folder-icon">▰</span><span><strong>{g.data.split('-').reverse().join('/')}</strong><small>{g.itens.length} produção(ões) • {servicos.length} serviço(s)</small></span></button>
-                {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Produção de {g.data.split('-').reverse().join('/')}</strong>{!forcarAberto&&<button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button>}</div>
+                {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Produção de {g.data.split('-').reverse().join('/')}</strong><button className="btn small" onClick={()=>corrigirDatasFrescoLegado(g.clienteId,g.data)}>Corrigir datas a fresco antigas</button>{!forcarAberto&&<button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button>}</div>
                 <div className="table-wrap"><table><thead><tr><th>Doadora</th><th>Raça</th><th>Touro</th><th>Raça</th><th>Oócitos totais</th><th>Viáveis</th><th>Clivados</th><th>% Cliv.</th><th>Embriões D7</th><th>% Prod.</th><th>Fresco</th><th>Cong. DT</th><th>Cong. VT</th><th>Total cong.</th><th>Ações</th></tr></thead><tbody>
                 {g.itens.map(p=>{const d=db.doadoras.find(x=>x.id===p.doadoraId);const rd=db.racas.find(x=>x.id===d?.racaId);const t=db.touros.find(x=>x.id===p.touroId);const rt=db.racas.find(x=>x.id===t?.racaId);const pctCliv=p.oocitosViaveis?Math.round((p.clivados/p.oocitosViaveis)*100)+'%':'0%';const pctProd=p.oocitosViaveis?Math.round((p.embriõesD7/p.oocitosViaveis)*100)+'%':'0%';const totalCong=n(p.congeladosDT)+n(p.congeladosVT);return <tr key={p.id}><td><strong>{d?.nome||'—'}</strong></td><td>{rd?.abreviatura||d?.raca||'—'}</td><td>{t?.nome||'—'}</td><td>{rt?.abreviatura||t?.raca||'—'}</td><td>{p.oocitos}</td><td>{p.oocitosViaveis}</td><td>{p.clivados}</td><td>{pctCliv}</td><td>{p.embriõesD7}</td><td>{pctProd}</td><td>{p.transferidosFresco}</td><td>{p.congeladosDT}</td><td>{p.congeladosVT}</td><td>{totalCong}</td><td><div className="actions production-row-actions"><button className="btn small order-btn" title="Mover para cima" onClick={()=>moverProducao(p,-1)}>↑</button><button className="btn small order-btn" title="Mover para baixo" onClick={()=>moverProducao(p,1)}>↓</button><button className="btn small" onClick={()=>setEdit({...p})}>Editar</button><button className="btn small" onClick={()=>setManual({...novaProd,data:p.data,clienteId:p.clienteId,doadoraId:p.doadoraId,origemAspiracaoId:p.origemAspiracaoId,ordem:proximaOrdem(p.clienteId,p.data)})}>Dividir</button><button className="btn small danger" onClick={()=>excluirProducao(p)}>Excluir</button></div></td></tr>})}
                 </tbody><tfoot><tr><th>TOTAL</th><th>—</th><th>—</th><th>—</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitos),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.clivados),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)?Math.round(g.itens.reduce((s,p)=>s+n(p.clivados),0)/g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)*100)+'%':'0%'}</th><th>{g.itens.reduce((s,p)=>s+n(p.embriõesD7),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)?Math.round(g.itens.reduce((s,p)=>s+n(p.embriõesD7),0)/g.itens.reduce((s,p)=>s+n(p.oocitosViaveis),0)*100)+'%':'0%'}</th><th>{g.itens.reduce((s,p)=>s+n(p.transferidosFresco),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosDT),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosVT),0)}</th><th>{g.itens.reduce((s,p)=>s+n(p.congeladosDT)+n(p.congeladosVT),0)}</th><th>—</th></tr></tfoot></table></div>
@@ -361,7 +398,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
 
     {manual&&<Modal title={manual.id?'Editar produção manual':'Nova produção'} onClose={()=>setManual(null)}>
       <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Data final da produção (D7)"><input type="date" value={manual.data} onChange={e=>setManual({...manual,data:e.target.value})}/></Field>
+        <Field label="Data final da produção (D7)"><ClearableDateInput type="date" value={manual.data} onChange={e=>setManual({...manual,data:e.target.value})}/></Field>
 
         <Field label="Cliente"><SearchableSelect value={manual.clienteId} onChange={v=>setManual({...manual,clienteId:v,doadoraId:'',touroId:''})} options={db.clientes.map(c=>({value:c.id,label:c.nome,search:[c.propriedade,c.municipio,c.cpf].join(' ')}))} placeholder="Digite o nome do cliente"/></Field>
 
@@ -399,7 +436,7 @@ export function Producoes({db,onChange,filtroInicial=null}:{db:BancoEmbrioGestor
       </div>
 
       <div className="form-grid" onKeyDown={handleEnterFlow}>
-        <Field label="Data final da produção (D7)"><input type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})}/></Field>
+        <Field label="Data final da produção (D7)"><ClearableDateInput type="date" value={edit.data} onChange={e=>setEdit({...edit,data:e.target.value})}/></Field>
         <Field label="Oócitos após descarte (editável)"><input type="number" min="0" value={edit.oocitos} onChange={e=>setEdit({...edit,oocitos:n(e.target.value)})}/></Field>
         <Field label="Viáveis após descarte (editável)"><input type="number" min="0" value={edit.oocitosViaveis} onChange={e=>setEdit({...edit,oocitosViaveis:n(e.target.value)})}/></Field>
         <Field label="Desnudos / não viáveis"><input value={Math.max(0,n(edit.oocitos)-n(edit.oocitosViaveis))} readOnly /></Field>

@@ -143,7 +143,7 @@ export function Dashboard({ db, onNavigate, onOpenProduction, onOpenMonth, filte
   // REGRA CENTRAL: 1 OPU/produção de serviço = 1 cliente + 1 data.
   // Várias doadoras do mesmo cliente no mesmo dia continuam contando como apenas 1 OPU.
   const chavesOPU = new Set<string>()
-  aspiracoes.forEach(a => chavesOPU.add(chaveServico(a.clienteId, a.data)))
+  // Somente serviços com produção D7 registrada entram no indicador de produções finalizadas.
   producoes.forEach(p => chavesOPU.add(chaveServico(p.clienteId, p.data)))
   const totalOPU = chavesOPU.size
 
@@ -171,7 +171,7 @@ export function Dashboard({ db, onNavigate, onOpenProduction, onOpenMonth, filte
   const estoqueAtualTotal = estoqueAtualDT + estoqueAtualVT
 
   const cards: Array<{ nome: string; valor: number | string; obs?: string; destino: PageId }> = [
-    { nome: 'OPUs / Produções', valor: totalOPU, obs: '1 cliente + 1 data = 1 OPU', destino: 'aspiracoes' },
+    { nome: 'OPUs / Produções', valor: totalOPU, obs: 'Produções D7: 1 cliente + 1 data = 1 serviço', destino: 'producoes' },
     { nome: 'Oócitos coletados (viáveis)', valor: oocitosViaveis, destino: 'aspiracoes' },
     { nome: 'Oócitos coletados totais', valor: oocitosTotais, destino: 'aspiracoes' },
     { nome: 'Embriões D7', valor: embrioesD7, destino: 'producoes' },
@@ -192,7 +192,7 @@ export function Dashboard({ db, onNavigate, onOpenProduction, onOpenMonth, filte
     const valores = Array(12).fill(0) as number[]
     const chavesPorMes = Array.from({ length: 12 }, () => new Set<string>())
     const anoGrafico = filtro.periodo === 'TODOS' ? anosDisponiveis[0] : filtro.ano
-    ;[...db.aspiracoes, ...db.producoes].forEach(item => {
+    ;db.producoes.forEach(item => {
       if (anoDaData(item.data) !== anoGrafico || !dentroProfissional(item.clienteId)) return
       const mes = Number(mesDaData(item.data)) - 1
       if (mes < 0 || mes > 11) return
@@ -345,7 +345,7 @@ export function Dashboard({ db, onNavigate, onOpenProduction, onOpenMonth, filte
           <div className="dashboard-section-head">
             <div>
               <h2>Produções por mês</h2>
-              <p>Cada cliente + data conta como um único serviço/OPU em {producoesPorMes.ano}.</p>
+              <p>Cada cliente + data D7 conta como um único serviço finalizado em {producoesPorMes.ano}.</p>
             </div>
           </div>
           <MiniChart valores={producoesPorMes.valores} onMesClick={mes => abrirProducoesDoMes(producoesPorMes.ano, mes)} />

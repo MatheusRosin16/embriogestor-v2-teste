@@ -1315,3 +1315,36 @@ body{min-width:320px}
     page-break-after: avoid;
   }
 }
+/* Datas: controle proprio, sempre visivel no iOS/Android e desktop. */
+.field:has(.embrio-clearable-date){min-width:0}
+.embrio-clearable-date{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:8px!important;width:100%!important;min-width:0!important;max-width:100%!important;align-items:stretch!important}
+.embrio-clearable-date input[type="date"],.embrio-clearable-date input[type="month"]{display:block!important;width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box!important;-webkit-appearance:auto!important}
+.embrio-clearable-date button{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-width:76px!important;min-height:46px!important;flex-shrink:0!important;position:relative!important;z-index:2!important;touch-action:manipulation!important}
+@media(max-width:740px){
+ .embrio-clearable-date{grid-template-columns:minmax(0,1fr)!important}
+ .embrio-clearable-date button{width:100%!important;min-height:46px!important}
+}
+
+/* Fase mobile: botao de limpar sempre abaixo do campo, inclusive Safari iOS. */
+.embrio-clearable-date {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  gap: 8px !important;
+}
+.embrio-clearable-date > input {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+.embrio-clearable-date > button {
+  display: block !important;
+  width: 100% !important;
+  min-height: 46px !important;
+  flex: 0 0 auto !important;
+  white-space: normal !important;
+  visibility: visible !important;
+}

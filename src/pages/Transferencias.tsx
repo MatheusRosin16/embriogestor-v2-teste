@@ -1,3 +1,4 @@
+import { ClearableDateInput } from '../components/ClearableDateInput'
 import { useMemo, useState } from 'react'
 import type { BancoEmbrioGestor, Transferencia, MovimentacaoItem } from '../types/domain'
 import { Field, Modal, SearchBar, SearchableSelect } from '../components/CrudUI'
@@ -94,7 +95,7 @@ export function Transferencias({
       return alert('Informe Ovário + CL.')
     }
 
-    const item:Transferencia={...t,clienteDestinoNome:nomeDestino(t),id:t.id||id('TE')}
+    const item:Transferencia={...t,obs:/^Transferência gerada automaticamente|^Transferência a fresco originada da Produção/i.test(t.obs||'')?'':t.obs,clienteDestinoNome:nomeDestino(t),id:t.id||id('TE')}
 
     let estoqueEmbrioes=[...db.estoqueEmbrioes]
     let movimentacoes=[...db.movimentacoes]
@@ -229,8 +230,8 @@ export function Transferencias({
         <div className="date-folder-grid">{datas.map(grupo=>{const [data,destinoNome]=grupo.split('|');const itensData=g.itens.filter(t=>String(t.data||'').slice(0,10)===data&&nomeDestino(t)===destinoNome);const chave=g.cliente.id+'|'+grupo;const dataOpen=dataAberta===chave;return <div className={`date-folder-card ${dataOpen?'is-open':''}`} key={chave}>
           <button className="date-folder-button" onClick={()=>setDataAberta(dataOpen?null:chave)}><span className="date-folder-icon">▰</span><span><strong>{data.split('-').reverse().join('/')} — {destinoNome}</strong><small>{itensData.length} transferência(s)</small></span></button>
           {dataOpen&&<div className="date-folder-content"><div className="date-folder-head"><strong>Transferências de {data.split('-').reverse().join('/')} — {destinoNome}</strong><button className="btn small" onClick={()=>setDataAberta(null)}>Fechar data</button></div>
-          <div className="table-wrap"><table><thead><tr><th>Receptora</th><th>Doadora</th><th>Touro</th><th>Estágio</th><th>Grau D7</th><th>Ovário + CL</th><th>Embrião</th><th>DG</th><th>Profissional</th><th>Ações</th></tr></thead><tbody>
-          {itensData.map(t=>{const d=db.doadoras.find(x=>x.id===t.doadoraId);const touro=db.touros.find(x=>x.id===t.touroId);const prof=db.profissionais.find(x=>x.id===t.profissionalId);const donoDoadora=db.clientes.find(x=>x.id===d?.clienteId);return <tr key={t.id}><td><strong>{t.receptora||'—'}</strong>{t.geradaPelaProducao&&!t.receptora&&<small className="auto-opu-badge">A preencher</small>}</td><td>{d?.nome||'—'}{d?.clienteId!==t.clienteId&&<small className="sub-info">Outro produtor: {donoDoadora?.nome||'—'}</small>}</td><td>{touro?.nome||'—'}</td><td><strong>{t.embriãoEstagio||'—'}</strong></td><td>{t.embriãoGrau||'—'}</td><td>{t.ovarioCL||'—'}</td><td><strong>{nomeTipo(t.destino)}</strong></td><td>{t.diagnostico||'—'}</td><td>{prof?.nome||'—'}</td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...t})}>Editar</button><button className="btn small danger" onClick={()=>excluirTransferencia(t)}>Excluir</button></div></td></tr>})}
+          <div className="table-wrap"><table><thead><tr><th>Receptora</th><th>Doadora</th><th>Touro</th><th>Estágio</th><th>Grau D7</th><th>Ovário + CL</th><th>Embrião</th><th>DG</th><th>Profissional</th><th>Observações</th><th>Ações</th></tr></thead><tbody>
+          {itensData.map(t=>{const d=db.doadoras.find(x=>x.id===t.doadoraId);const touro=db.touros.find(x=>x.id===t.touroId);const prof=db.profissionais.find(x=>x.id===t.profissionalId);const donoDoadora=db.clientes.find(x=>x.id===d?.clienteId);return <tr key={t.id}><td><strong>{t.receptora||'—'}</strong>{t.geradaPelaProducao&&!t.receptora&&<small className="auto-opu-badge">A preencher</small>}</td><td>{d?.nome||'—'}{d?.clienteId!==t.clienteId&&<small className="sub-info">Outro produtor: {donoDoadora?.nome||'—'}</small>}</td><td>{touro?.nome||'—'}</td><td><strong>{t.embriãoEstagio||'—'}</strong></td><td>{t.embriãoGrau||'—'}</td><td>{t.ovarioCL||'—'}</td><td><strong>{nomeTipo(t.destino)}</strong></td><td>{t.diagnostico||'—'}</td><td>{prof?.nome||'—'}</td><td>{/^Transferência gerada automaticamente|^Transferência a fresco originada da Produção/i.test(t.obs||'')?'':t.obs||'—'}</td><td><div className="actions"><button className="btn small" onClick={()=>setEdit({...t})}>Editar</button><button className="btn small danger" onClick={()=>excluirTransferencia(t)}>Excluir</button></div></td></tr>})}
           </tbody></table></div></div>}
         </div>})}</div></div>}
       </div>})}
@@ -244,7 +245,7 @@ export function Transferencias({
       >
         <div className="form-grid" onKeyDown={handleEnterFlow}>
           <Field label="Data da transferência">
-            <input
+            <ClearableDateInput
               type="date"
               value={edit.data}
               onChange={e=>setEdit({...edit,data:e.target.value})}
@@ -398,7 +399,7 @@ export function Transferencias({
           </Field>
 
           <Field label="Data do diagnóstico">
-            <input
+            <ClearableDateInput
               type="date"
               value={edit.dataDiagnostico||''}
               onChange={e=>setEdit({...edit,dataDiagnostico:e.target.value})}
